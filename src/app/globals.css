@@ -1,0 +1,105 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  background: #070b16;
+  color: #e2e8f0;
+  font-family: "Inter", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Subtle scrollbar for the dark theme */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #1c2742; border-radius: 6px; }
+::-webkit-scrollbar-thumb:hover { background: #27324f; }
+
+/* Pulse dot for live/active agents */
+@keyframes livePulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+.live-dot { animation: livePulse 1.6s ease-in-out infinite; }
+
+/* AI Content Editor (contentEditable) — readable dark rich text */
+.prose-editor h2 { font-size: 1.05rem; font-weight: 700; color: #fff; margin: .9rem 0 .4rem; }
+.prose-editor h3 { font-size: .95rem; font-weight: 600; color: #e2e8f0; margin: .7rem 0 .3rem; }
+.prose-editor p { margin: .5rem 0; }
+.prose-editor ul, .prose-editor ol { margin: .5rem 0 .5rem 1.25rem; }
+.prose-editor ul { list-style: disc; } .prose-editor ol { list-style: decimal; }
+.prose-editor li { margin: .2rem 0; }
+.prose-editor a { color: #60a5fa; text-decoration: underline; }
+.prose-editor img { max-width: 100%; border-radius: .5rem; margin: .5rem 0; }
+.prose-editor blockquote { border-left: 3px solid #6366f1; padding-left: .75rem; color: #cbd5e1; margin: .6rem 0; font-style: italic; }
+.prose-editor table { border-collapse: collapse; width: 100%; margin: .6rem 0; font-size: .8rem; }
+.prose-editor th, .prose-editor td { border: 1px solid #334155; padding: .35rem .5rem; text-align: left; }
+.prose-editor pre { background: #0f172a; padding: .6rem; border-radius: .4rem; font-family: monospace; font-size: .8rem; overflow-x: auto; }
+.prose-editor:empty::before { content: "Start writing…"; color: #475569; }
+
+/* ===== TipTap RichTextEditor (ported from admin-panel) ===== */
+/* ---------------------------------------------------------------------------
+ * TipTap (RichTextEditor) prose styling — used inside .tr-prose to make the
+ * editor content look like the public site rendering, plus interactive bits
+ * (placeholder, task lists, table resizing handles, focus ring).
+ * --------------------------------------------------------------------------- */
+.tr-prose { color: #0f172a; font-family: Inter, system-ui, sans-serif; }
+.tr-prose:focus { outline: none; }
+.tr-prose p { margin: 0.45em 0; line-height: 1.6; }
+.tr-prose h1 { font-size: 1.875rem; font-weight: 800; line-height: 1.2; margin: 1em 0 0.5em; }
+.tr-prose h2 { font-size: 1.5rem; font-weight: 700; line-height: 1.25; margin: 1em 0 0.45em; }
+.tr-prose h3 { font-size: 1.25rem; font-weight: 700; margin: 0.9em 0 0.4em; }
+.tr-prose h4 { font-size: 1.1rem; font-weight: 700; margin: 0.8em 0 0.4em; }
+.tr-prose a { color: #2563eb; text-decoration: underline; }
+.tr-prose strong { font-weight: 700; }
+.tr-prose em { font-style: italic; }
+.tr-prose s { text-decoration: line-through; }
+.tr-prose code { background: #f1f5f9; padding: 0 0.25rem; border-radius: 0.25rem; font-family: ui-monospace, monospace; font-size: 0.92em; }
+.tr-prose pre { background: #0f172a; color: #e2e8f0; padding: 0.85rem 1rem; border-radius: 0.5rem; overflow-x: auto; margin: 0.75em 0; font-family: ui-monospace, monospace; font-size: 0.85rem; line-height: 1.55; }
+.tr-prose pre code { background: transparent; color: inherit; padding: 0; }
+/* Quick-pick callout boxes — match the published TripReview blog (NOT italic) */
+.tr-prose blockquote { border-left: 4px solid #2563eb; background: #f1f5f9; border-radius: 0 0.5rem 0.5rem 0; padding: 0.6em 1em; color: #334155; font-style: normal; margin: 0.85em 0; }
+.tr-prose blockquote p { margin: 0.2em 0; }
+.tr-prose blockquote p strong { color: #0f172a; }
+.tr-prose ul { list-style: disc; padding-left: 1.4rem; margin: 0.5em 0; }
+.tr-prose ol { list-style: decimal; padding-left: 1.4rem; margin: 0.5em 0; }
+.tr-prose hr { border: 0; border-top: 1px solid #e2e8f0; margin: 1em 0; }
+.tr-prose img { max-width: 100%; height: auto; border-radius: 0.5rem; margin: 0.6em 0; }
+.tr-prose iframe { border-radius: 0.5rem; }
+.tr-prose mark { background: #fef08a; border-radius: 0.2rem; padding: 0 0.15rem; }
+
+/* Placeholder shown when the editor is empty */
+.tr-prose p.is-editor-empty:first-child::before {
+  color: #94a3b8;
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
+
+/* Task lists (checklist) */
+.tr-prose ul.tr-task-list { list-style: none; padding-left: 0.25rem; }
+.tr-prose ul.tr-task-list li { display: flex; align-items: flex-start; gap: 0.5rem; margin: 0.25em 0; }
+.tr-prose ul.tr-task-list li > label { user-select: none; margin-top: 0.25rem; }
+.tr-prose ul.tr-task-list li > div { flex: 1; min-width: 0; }
+.tr-prose ul.tr-task-list li[data-checked="true"] > div > p { color: #94a3b8; text-decoration: line-through; }
+.tr-prose ul.tr-task-list li > label > input[type="checkbox"] { accent-color: #2563eb; }
+
+/* Tables */
+.tr-prose table { border-collapse: collapse; table-layout: fixed; width: 100%; margin: 0.75em 0; }
+.tr-prose th, .tr-prose td { border: 1px solid #e2e8f0; padding: 0.5rem 0.65rem; vertical-align: top; }
+.tr-prose th { background: #f1f5f9; font-weight: 700; text-align: left; }
+.tr-prose .tableWrapper { overflow-x: auto; }
+.tr-prose .selectedCell { background: rgba(37, 99, 235, 0.12); }
+.tr-prose .column-resize-handle { background: #2563eb; bottom: 0; pointer-events: none; position: absolute; right: -2px; top: 0; width: 2px; }
+
+/* Focus ring on the active node */
+.tr-prose .has-focus { box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.18); border-radius: 0.4rem; }
+
+/* Highlight color marks */
+.tr-prose mark[data-color] { background: var(--tw-bg, currentColor); }

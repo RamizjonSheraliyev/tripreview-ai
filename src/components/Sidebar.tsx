@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   Sparkles, LogOut, ExternalLink,
   LayoutDashboard, Crown, MessageSquare, ListChecks, ShieldCheck,
-  Megaphone, Search, PenLine, Send, Share2, Radar, Briefcase,
+  Megaphone, Search, PenLine, Send, Share2, Radar, Briefcase, UserCheck, Network,
   TrendingUp, BarChart3, DollarSign, FileText,
   Plug, Settings, ScrollText,
 } from "lucide-react";
@@ -32,8 +32,10 @@ const GROUPS: NavGroup[] = [
       { label: "Copywriter Agent", icon: PenLine, href: "/agents/copywriter", dot: true },
       { label: "Publisher Agent", icon: Send, href: "/agents/publisher", dot: true },
       { label: "Sales Agent", icon: Briefcase, href: "/agents/sales", dot: true },
+      { label: "Provider Onboarding", icon: UserCheck, href: "/agents/onboarding", dot: true },
+      { label: "Marketplace Growth", icon: Network, href: "/agents/marketplace", dot: true },
       { label: "Content Distribution", icon: Share2 },
-      { label: "Competitive Intelligence", icon: Radar },
+      { label: "Competitive Intelligence", icon: Radar, href: "/agents/competitive", dot: true },
     ],
   },
   {

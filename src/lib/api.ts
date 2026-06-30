@@ -1047,6 +1047,384 @@ export function salesDailyRun(count = 10) { return request<{ ok: boolean; found?
 export function salesOnboard(id: string) { return request<{ ok: boolean; email?: string; loginUrl?: string; created?: boolean; lead?: SalesLead; message?: string }>(`/admin/agents/sales/leads/${id}/onboard`, { method: "POST" }); }
 export function salesAutoReply(id: string) { return request<{ ok: boolean; intent?: string; reply?: string; onboarded?: boolean; email?: string; message?: string }>(`/admin/agents/sales/leads/${id}/autoreply`, { method: "POST" }); }
 
+// ---- Provider Onboarding Agent ----
+export type Kpi = { value: number; trend: number; suffix?: string; prefix?: string; est?: boolean };
+export type Seg = { label: string; count: number; color: string; pct: number };
+export type OnbClaim = { id: string; company: string; contact: string; contactEmail: string; category: string; submittedAt: string; status: string; assignedTo: string; rating: number; ratingCount: number; logoUrl: string; strength: number };
+export type OnbChecklist = { key: string; status: string };
+export type OnbProgress = { id: string; company: string; logoUrl: string; category: string; strength: number; label: string; checklist: OnbChecklist[] };
+export type OnbProvider = {
+  id: string; company: string; category: string; contact: string; contactEmail: string; logoUrl: string;
+  status: string; verified: boolean; vstate: string; strength: number; health: number; services: number;
+  rating: number; ratingCount: number; galleryCount: number; hasLogo: boolean; hasTradeLicense: boolean;
+  hasPricing: boolean; hasPhone: boolean; planName: string; claimStatus: string;
+  docs: { label: string; status: string }[]; createdAt: string; updatedAt: string; missing: string[];
+};
+export type OnboardingOverview = {
+  kpis: { pendingClaims: Kpi; profilesInProgress: Kpi; verificationRequests: Kpi; activeProviders: Kpi; completionRate: Kpi; avgOnboardingDays: Kpi };
+  funnel: { label: string; count: number }[]; conversionRate: number;
+  claimRequests: OnbClaim[]; progressProviders: OnbProgress[];
+  verification: { total: number; segments: Seg[] };
+  missingInfo: { label: string; count: number; severity: string; field: string }[];
+  topCategories: { total: number; items: Seg[] };
+  activity: { title: string; detail: string; at: string; status: string }[];
+  health: { avg: number; label: string; distribution: Seg[] };
+  plans: { total: number; items: Seg[]; source: string };
+  nextSteps: { text: string; priority: string }[];
+  summary: { claimsSubmitted: Kpi; profilesCompleted: Kpi; providersActivated: Kpi; newSubscriptions: Kpi; revenueGenerated: Kpi & { currency: string } };
+  pendingReviews: number; meta: { totalProviders: number; llm: boolean };
+};
+export function getOnboardingOverview() { return request<OnboardingOverview>("/admin/agents/onboarding/overview"); }
+export function getOnboardingProviders(params: { filter?: string; q?: string } = {}) { const qs = new URLSearchParams(params as Record<string, string>).toString(); return request<{ providers: OnbProvider[]; total: number; filter: string }>(`/admin/agents/onboarding/providers${qs ? `?${qs}` : ""}`); }
+export function onbVerify(id: string) { return request<{ ok: boolean; message?: string }>(`/admin/agents/onboarding/providers/${id}/verify`, { method: "POST" }); }
+export function onbActivate(id: string) { return request<{ ok: boolean; message?: string }>(`/admin/agents/onboarding/providers/${id}/activate`, { method: "POST" }); }
+export function onbReject(id: string, reason = "") { return request<{ ok: boolean; message?: string }>(`/admin/agents/onboarding/providers/${id}/reject`, { method: "POST", body: JSON.stringify({ reason }) }); }
+export function onbRequestInfo(id: string, fields: string[] = []) { return request<{ ok: boolean; message?: string; fields?: string[] }>(`/admin/agents/onboarding/providers/${id}/request-info`, { method: "POST", body: JSON.stringify({ fields }) }); }
+export function onbDraft(id: string) { return request<{ ok: boolean; message?: string }>(`/admin/agents/onboarding/providers/${id}/draft`, { method: "POST" }); }
+
+export type ClaimRow = { id: string; company: string; contact: string; contactEmail: string; category: string; location: string; claimedBy: string; claimedEmail: string; phone: string; channel: string; submittedAt: string; status: string; score: number; assignedTo: string; logoUrl: string; rating: number; ratingCount: number; reviewedAt: string | null };
+export type ClaimRequestsData = {
+  kpis: { total: Kpi; newRequests: Kpi; underReview: Kpi; verified: Kpi; rejected: Kpi; avgReviewDays: Kpi };
+  statusDist: { total: number; segments: Seg[] };
+  channels: Seg[]; byCategory: { total: number; items: Seg[] };
+  claimsOverTime: { label: string; count: number }[]; reviewTimeSeries: { label: string; value: number }[];
+  avgReview: { days: number; trend: number };
+  scoreOverview: { avg: number; bands: Seg[] };
+  activity: { title: string; detail: string; at: string; status: string }[];
+  table: { rows: ClaimRow[]; total: number; page: number; perPage: number; pages: number };
+  categories: string[]; statuses: string[];
+};
+export function getClaimRequests(params: { q?: string; status?: string; category?: string; page?: number; perPage?: number } = {}) {
+  const qs = new URLSearchParams(Object.fromEntries(Object.entries(params).filter(([, v]) => v !== "" && v != null).map(([k, v]) => [k, String(v)]))).toString();
+  return request<ClaimRequestsData>(`/admin/agents/onboarding/claims${qs ? `?${qs}` : ""}`);
+}
+
+export type VerifRow = { id: string; company: string; contact: string; contactEmail: string; category: string; location: string; type: string; typeMain: string; submittedAt: string; status: string; score: number; hasScore: boolean; assignedTo: string; logoUrl: string; rating: number; ratingCount: number; verified: boolean; rejected: boolean };
+export type VerificationData = {
+  kpis: { total: Kpi; pending: Kpi; verified: Kpi; rejected: Kpi; rate: Kpi; avgTime: Kpi };
+  scoreDist: { total: number; segments: Seg[] }; byType: Seg[];
+  fraudAlerts: { company: string; reason: string; risk: string }[];
+  funnel: { label: string; count: number }[]; conversion: number;
+  trends: { label: string; submitted: number; verified: number; rejected: number }[];
+  timeByType: { label: string; days: number }[];
+  topCatRate: { label: string; rate: number; verified: number; total: number }[];
+  team: { agent: string; verified: number; successRate: number; avgTime: number }[];
+  table: { rows: VerifRow[]; total: number; page: number; perPage: number; pages: number };
+  categories: string[]; statuses: string[];
+};
+export function getVerificationCenter(params: { q?: string; status?: string; category?: string; page?: number; perPage?: number } = {}) {
+  const qs = new URLSearchParams(Object.fromEntries(Object.entries(params).filter(([, v]) => v !== "" && v != null).map(([k, v]) => [k, String(v)]))).toString();
+  return request<VerificationData>(`/admin/agents/onboarding/verification${qs ? `?${qs}` : ""}`);
+}
+
+export type CompRow = { rank: number; id: string; company: string; category: string; location: string; logoUrl: string; visibility: number; reviews: number; rating: number; services: number; price: number; pricing: string; you: number; them: number; threat: string; isFocal: boolean; views: number; gallery: number; bookings: number; strength: number; verified: boolean; featured: boolean };
+export type CompetitionData = {
+  empty?: boolean;
+  focal: { id: string; company: string; category: string; rank: number; visibility: number };
+  providers: { id: string; company: string }[];
+  kpis: { competitorsTracked: Kpi; yourVisibility: Kpi; overallRank: Kpi; categoryRank: Kpi; marketShare: Kpi; threats: Kpi };
+  avgVisibility: number; marketShare: number;
+  topCompetitors: { rows: CompRow[]; total: number; page: number; perPage: number; pages: number };
+  radar: { axes: string[]; you: number[]; them: number[]; youName: string; themName: string };
+  threats: { company: string; reason: string; level: string }[];
+  categoryRanking: { focalRank: number; focalCatTotal: number; segments: Seg[] };
+  reviewComparison: { company: string; rating: number; reviews: number; isFocal: boolean }[];
+  seoTraffic: { company: string; visits: number; isFocal: boolean }[];
+  servicesComparison: { company: string; services: number; isFocal: boolean }[];
+  pricingPositioning: { focalPrice: number; avgPrice: number; maxPrice: number; tier: string };
+  marketShareTop: { company: string; share: number; isFocal: boolean }[];
+  opportunities: { text: string; pts: number; impact: string }[];
+  recommendations: string[]; categories: string[]; locations: string[]; themId: string; avgPrice: number;
+};
+export function getProfileCompetition(params: { focalId?: string; category?: string; location?: string; themId?: string; page?: number; perPage?: number } = {}) {
+  const qs = new URLSearchParams(Object.fromEntries(Object.entries(params).filter(([, v]) => v !== "" && v != null).map(([k, v]) => [k, String(v)]))).toString();
+  return request<CompetitionData>(`/admin/agents/onboarding/competition${qs ? `?${qs}` : ""}`);
+}
+
+export type CompletionRow = { id: string; company: string; category: string; contact: string; contactEmail: string; logoUrl: string; status: string; verified: boolean; strength: number; services: number; checklist: OnbChecklist[]; missing: string[]; filled: number };
+export type CompletionData = {
+  kpis: { avgCompletion: Kpi; fullyComplete: Kpi; inProgress: Kpi; needsAttention: Kpi; verified: Kpi; stalled: Kpi };
+  fieldCompletion: { label: string; done: number; missing: number; pct: number }[];
+  distribution: { total: number; segments: Seg[] }; totalFields: number;
+  providers: { rows: CompletionRow[]; total: number; page: number; perPage: number; pages: number };
+};
+export function getProfileCompletion(params: { q?: string; band?: string; page?: number; perPage?: number } = {}) {
+  const qs = new URLSearchParams(Object.fromEntries(Object.entries(params).filter(([, v]) => v !== "" && v != null).map(([k, v]) => [k, String(v)]))).toString();
+  return request<CompletionData>(`/admin/agents/onboarding/completion${qs ? `?${qs}` : ""}`);
+}
+
+export type ServiceRow = { id: string; name: string; image: string; provider: string; category: string; rawCategory: string; location: string; price: number; mode: string; currency: string; priceLabel: string; status: string; rawStatus: string; published: boolean; features: string[]; amenities: number; hasCover: boolean; hasPricing: boolean; views: number; bookings: number; rating: number; ratingCount: number; createdAt: string };
+export type ServiceListingsData = {
+  kpis: { total: Kpi; published: Kpi; draft: Kpi; inactive: Kpi; withPricing: Kpi };
+  byCategory: { total: number; items: Seg[] }; statusOverview: Seg[];
+  topPerforming: { id: string; name: string; provider: string; image: string; views: number; bookings: number; rating: number }[];
+  addedOverTime: { label: string; count: number }[];
+  priceDistribution: { total: number; items: Seg[] };
+  pricingSplit: { withPricing: number; withoutPricing: number; withPct: number; withoutPct: number };
+  recommendations: { text: string; impact: string }[];
+  table: { rows: ServiceRow[]; total: number; page: number; perPage: number; pages: number };
+  categories: string[]; locations: string[]; providers: string[]; statuses: string[];
+};
+export function getServiceListings(params: { q?: string; status?: string; category?: string; location?: string; provider?: string; page?: number; perPage?: number } = {}) {
+  const qs = new URLSearchParams(Object.fromEntries(Object.entries(params).filter(([, v]) => v !== "" && v != null).map(([k, v]) => [k, String(v)]))).toString();
+  return request<ServiceListingsData>(`/admin/agents/onboarding/listings${qs ? `?${qs}` : ""}`);
+}
+export function setListingStatus(id: string, status: string) { return request<{ ok: boolean; message?: string }>(`/admin/agents/onboarding/listings/${id}/status`, { method: "POST", body: JSON.stringify({ status }) }); }
+
+export type SubPackage = { id: string; name: string; priceMonthly: number; priceYearly: number; currency: string; subscribers: number; mrr: number; featureCount: number; status: string; badge: string; highlighted: boolean; color: string };
+export type SubRecent = { id: string; provider: string; logoUrl: string; planName: string; billing: string; amount: number; status: string; startDate: string; nextRenewal: string | null };
+export type SubscriptionsData = {
+  kpis: { totalSubscribers: Kpi; activeSubscriptions: Kpi; mrr: Kpi & { currency: string }; arr: Kpi & { currency: string }; churnRate: Kpi; conversionRate: Kpi };
+  packages: SubPackage[];
+  comparison: { plans: string[]; rows: { feature: string; values: string[] }[] };
+  recent: SubRecent[];
+  statusBreakdown: { total: number; segments: Seg[] };
+  revenueByPlan: { total: number; segments: Seg[] };
+  mrrTrend: { label: string; value: number }[];
+  upcoming: { provider: string; logoUrl: string; planName: string; date: string }[];
+  funnel: { label: string; count: number }[];
+  plansCount: number; statuses: string[];
+};
+export function getSubscriptions() { return request<SubscriptionsData>("/admin/agents/onboarding/subscriptions"); }
+export function updateSubscriptionPlan(id: string, patch: { priceMonthly?: number; priceYearly?: number; active?: boolean; badge?: string }) { return request<{ ok: boolean; message?: string }>(`/admin/agents/onboarding/plans/${id}`, { method: "PATCH", body: JSON.stringify(patch) }); }
+
+export type QueueRow = { kind: string; id: string; ref: string; name: string; logoUrl: string; category: string; location: string; approved: boolean; active: boolean; approvedOn: string | null; approvedBy: string; timeInQueue: number; slaStatus: string; ready: boolean; score: number; nextStep: string };
+export type ApprovalQueueData = {
+  kpis: { totalApproved: Kpi; readyForActivation: Kpi; autoActivated: Kpi; pendingActivation: Kpi; avgTimeInQueue: Kpi; slaBreached: Kpi };
+  byType: { total: number; segments: Seg[] }; slaStatus: { total: number; segments: Seg[] }; slaCompliance: number;
+  approvalTrend: { label: string; count: number }[];
+  queueInsights: { fastest: { name: string; dur: string } | null; slowest: { name: string; dur: string } | null; mostApprovalsBy: { name: string; count: number } | null; autoActivationRate: number };
+  activity: { title: string; detail: string; by: string; at: string; status: string }[];
+  nextSteps: { label: string; count: number; icon: string }[];
+  table: { rows: QueueRow[]; total: number; page: number; perPage: number; pages: number };
+  categories: string[]; locations: string[]; types: string[]; slas: string[];
+};
+export function getApprovalQueue(params: { q?: string; type?: string; category?: string; location?: string; sla?: string; page?: number; perPage?: number } = {}) {
+  const qs = new URLSearchParams(Object.fromEntries(Object.entries(params).filter(([, v]) => v !== "" && v != null).map(([k, v]) => [k, String(v)]))).toString();
+  return request<ApprovalQueueData>(`/admin/agents/onboarding/queue${qs ? `?${qs}` : ""}`);
+}
+export function queueAction(body: { kind: string; id: string; action: string }) { return request<{ ok: boolean; message?: string }>(`/admin/agents/onboarding/queue/action`, { method: "POST", body: JSON.stringify(body) }); }
+
+export type MissingRow = { id: string; ref: string; name: string; logoUrl: string; type: string; category: string; location: string; missing: { field: string; category: string }[]; missingFields: string[]; missingCount: number; daysOverdue: number; status: string; lastReminder: string | null; reminders: number; email: string };
+export type MissingInfoData = {
+  kpis: { providersMissingInfo: Kpi; totalMissingFields: Kpi; avgMissingPerProvider: Kpi; overdueProviders: Kpi; autoRemindersSent: Kpi };
+  summary: { total: number; segments: Seg[] };
+  byCategory: Seg[];
+  topFields: { label: string; count: number; pct: number }[];
+  sla: { total: number; segments: Seg[] };
+  recentReminders: { provider: string; logoUrl: string; sentTo: string; fields: number; sentOn: string; status: string }[];
+  automation: { enabled: boolean; remindersThisWeek: number; mostMissingField: { name: string; count: number } | null; suggestion: string };
+  table: { rows: MissingRow[]; total: number; page: number; perPage: number; pages: number };
+  categories: string[]; locations: string[]; fields: string[]; statuses: string[];
+};
+export function getMissingInformation(params: { q?: string; category?: string; location?: string; field?: string; status?: string; page?: number; perPage?: number } = {}) {
+  const qs = new URLSearchParams(Object.fromEntries(Object.entries(params).filter(([, v]) => v !== "" && v != null).map(([k, v]) => [k, String(v)]))).toString();
+  return request<MissingInfoData>(`/admin/agents/onboarding/missing${qs ? `?${qs}` : ""}`);
+}
+
+export type FunnelStage = { key: number; name: string; desc: string; count: number; pct: number; color: string };
+export type FunnelData = {
+  kpis: { totalStarted: Kpi; completedOnboarding: Kpi; conversionRate: Kpi; droppedOff: Kpi; avgTimeToActivate: Kpi; inProgress: Kpi };
+  funnel: FunnelStage[];
+  dropoff: { stage: string; dropStage: string; count: number; pct: number }[];
+  overallConversion: number; totalDropoff: number;
+  dropAnalysis: { total: number; segments: Seg[] };
+  topReasons: { reason: string; count: number; pct: number }[];
+  stagePerf: { stage: string; num: number; conversionRate: number; dropRate: number; color: string }[];
+  trend: { label: string; value: number }[]; timeTrend: { label: string; value: number }[];
+  journey: { id: string; name: string; logoUrl: string; stage: string; progress: number; timeInStage: number; nextStep: string; lastActivity: string }[];
+  insights: { text: string; icon: string }[]; avgTimeToActivate: number;
+};
+export function getOnboardingFunnel() { return request<FunnelData>("/admin/agents/onboarding/funnel"); }
+
+export type BadgeRow = { id: string; ref: string; requestId: string; name: string; logoUrl: string; category: string; location: string; badge: string; status: string; priority: string; verified: boolean; rejected: boolean; requestedOn: string; rating: number; strength: number };
+export type BadgeCatRow = { category: string; Verified: number; Pending: number; "Revision Required": number; Rejected: number; total: number };
+export type BadgeCenterData = {
+  kpis: { totalRequests: Kpi; pendingVerification: Kpi; verifiedThisWeek: Kpi; rejectedThisWeek: Kpi; verificationRate: Kpi };
+  overview: { total: number; segments: Seg[] };
+  rateTrend: { label: string; value: number }[];
+  topRejected: { reason: string; count: number; pct: number }[];
+  activity: { title: string; detail: string; at: string; status: string }[];
+  badgeDistribution: { total: number; segments: Seg[] };
+  byCategory: BadgeCatRow[];
+  avgTime: number; timeTrend: { label: string; value: number }[];
+  table: { rows: BadgeRow[]; total: number; page: number; perPage: number; pages: number };
+  badgeTypes: string[]; statuses: string[]; categories: string[]; locations: string[];
+};
+export function getBadgeCenter(params: { q?: string; badgeType?: string; status?: string; category?: string; location?: string; page?: number; perPage?: number } = {}) {
+  const qs = new URLSearchParams(Object.fromEntries(Object.entries(params).filter(([, v]) => v !== "" && v != null).map(([k, v]) => [k, String(v)]))).toString();
+  return request<BadgeCenterData>(`/admin/agents/onboarding/badges${qs ? `?${qs}` : ""}`);
+}
+
+// ---- Marketplace Growth Agent ----
+export type MktProvider = { id: string; name: string; category: string; location: string; website: string; logoUrl: string; claimed: boolean; unclaimed: boolean; verified: boolean; published: boolean; strength: number; growthScore: number; revenue: number; source: string; createdAt: string };
+export type MarketplaceData = {
+  kpis: { providersDiscovered: Kpi; unclaimedCreated: Kpi; profilesClaimed: Kpi; highValueProviders: Kpi; coverageScore: Kpi; growthRate: Kpi };
+  overview: { label: string; discovered: number; unclaimed: number; claimed: number }[];
+  health: { score: number; label: string; metrics: { label: string; value: number; kind: string; good: boolean }[] };
+  byCategory: { total: number; items: Seg[] };
+  topLocations: { location: string; total: number; newThisWeek: number; coverageScore: number }[];
+  highValueProviders: { name: string; category: string; growthScore: number; revenue: number; logoUrl: string }[];
+  activities: { title: string; detail: string; at: string; status: string }[];
+  pipeline: { label: string; count: number; color: string }[];
+  forecast: { label: string; value: number; series: number[] }[];
+  categories: string[]; llm: boolean;
+};
+export function getMarketplaceGrowth() { return request<MarketplaceData>("/admin/agents/marketplace/overview"); }
+export function getMarketplaceProviders(params: { filter?: string; q?: string; category?: string } = {}) { const qs = new URLSearchParams(params as Record<string, string>).toString(); return request<{ providers: MktProvider[]; total: number; filter: string }>(`/admin/agents/marketplace/providers${qs ? `?${qs}` : ""}`); }
+export function discoverProviders(body: { category: string; count?: number }) { return request<{ ok: boolean; created?: { id: string; name: string; category: string; location: string; growthScore: number; source: string }[]; message?: string }>("/admin/agents/marketplace/discover", { method: "POST", body: JSON.stringify(body) }); }
+export function mktPublish(id: string) { return request<{ ok: boolean; message?: string }>(`/admin/agents/marketplace/providers/${id}/publish`, { method: "POST" }); }
+export function mktToSales(id: string) { return request<{ ok: boolean; message?: string }>(`/admin/agents/marketplace/providers/${id}/to-sales`, { method: "POST" }); }
+
+export type DiscoveryRow = { id: string; company: string; category: string; location: string; source: string; confidence: number; status: string; phone: string; website: string; addedOn: string; converted: boolean; growthScore: number; revenue: number };
+export type DiscoveryData = {
+  kpis: { newProvidersFound: Kpi; highConfidence: Kpi; sourcesScanned: Kpi; totalOpportunities: Kpi; convertedToProfiles: Kpi; successRate: Kpi };
+  sourcesPerformance: { source: string; found: number; highConfidence: number; successRate: number }[];
+  foundTrend: { label: string; totalFound: number; highConfidence: number; converted: number }[];
+  byCategory: { total: number; items: Seg[] };
+  byLocation: { location: string; count: number; pct: number }[];
+  confidenceDist: { total: number; segments: Seg[] };
+  table: { rows: DiscoveryRow[]; total: number; page: number; perPage: number; pages: number };
+  categories: string[]; locations: string[]; sources: string[]; statuses: string[]; llm: boolean;
+};
+export function getProviderDiscovery(params: { q?: string; category?: string; location?: string; source?: string; confidence?: string; status?: string; page?: number; perPage?: number } = {}) {
+  const qs = new URLSearchParams(Object.fromEntries(Object.entries(params).filter(([, v]) => v !== "" && v != null).map(([k, v]) => [k, String(v)]))).toString();
+  return request<DiscoveryData>(`/admin/agents/marketplace/discovery${qs ? `?${qs}` : ""}`);
+}
+export function mktBulkPublish(ids: string[]) { return request<{ ok: boolean; message?: string; count?: number }>("/admin/agents/marketplace/bulk-publish", { method: "POST", body: JSON.stringify({ ids }) }); }
+
+export type UnclaimedRow = { id: string; company: string; website: string; logoUrl: string; category: string; location: string; source: string; confidence: number; quality: number; stars: number; status: string; addedOn: string; isNew: boolean; phone: string; missing: string[] };
+export type UnclaimedData = {
+  kpis: { totalUnclaimed: Kpi; newThisWeek: Kpi; published: Kpi; claimedThisMonth: Kpi; pendingReview: Kpi; requiringAttention: Kpi };
+  statusBreakdown: { total: number; segments: Seg[] };
+  avgQuality: number; starDist: { star: number; count: number; pct: number }[];
+  topMissing: { label: string; count: number; pct: number }[];
+  counts: Record<string, number>;
+  table: { rows: UnclaimedRow[]; total: number; page: number; perPage: number; pages: number };
+  categories: string[]; locations: string[]; sources: string[]; statuses: string[]; llm: boolean;
+};
+export function getUnclaimedProfiles(params: { q?: string; category?: string; location?: string; source?: string; confidence?: string; status?: string; page?: number; perPage?: number } = {}) {
+  const qs = new URLSearchParams(Object.fromEntries(Object.entries(params).filter(([, v]) => v !== "" && v != null).map(([k, v]) => [k, String(v)]))).toString();
+  return request<UnclaimedData>(`/admin/agents/marketplace/unclaimed${qs ? `?${qs}` : ""}`);
+}
+export function mktDelete(ids: string[]) { return request<{ ok: boolean; message?: string; count?: number }>("/admin/agents/marketplace/delete", { method: "POST", body: JSON.stringify({ ids }) }); }
+export function mktToOnboarding(ids: string[]) { return request<{ ok: boolean; message?: string }>("/admin/agents/marketplace/to-onboarding", { method: "POST", body: JSON.stringify({ ids }) }); }
+export function mktEnrich(id: string) { return request<{ ok: boolean; message?: string }>(`/admin/agents/marketplace/providers/${id}/enrich`, { method: "POST" }); }
+
+export type FunnelGroupRow = { name: string; created: number; published: number; viewed: number; claimed: number; verified: number; subscriber: number; claimRate: number; color: string };
+export type ClaimFunnelData = {
+  funnel: { label: string; count: number; color: string; pct: number }[];
+  conversions: { from: string; to: string; rate: number; drop: number }[];
+  summary: { totalCreated: Kpi; totalClaimed: Kpi; totalVerified: Kpi; totalSubscribers: Kpi; overallClaimRate: Kpi; overallVerificationRate: Kpi; overallSubscriptionRate: Kpi };
+  trend: { label: string; created: number; published: number; viewed: number; claimRequested: number; verified: number; subscriber: number }[];
+  byCategory: FunnelGroupRow[]; byLocation: FunnelGroupRow[];
+  recentClaims: { id: string; company: string; category: string; location: string; requestedOn: string; contact: string; email: string; status: string; logoUrl: string }[];
+  claimRateOverTime: { label: string; value: number }[];
+  topDrop: { from: string; to: string; rate: number; drop: number };
+  insights: { text: string; icon: string }[];
+};
+export function getClaimFunnel() { return request<ClaimFunnelData>("/admin/agents/marketplace/claim-funnel"); }
+export function mktClaimInvite(ids: string[]) { return request<{ ok: boolean; message?: string }>("/admin/agents/marketplace/claim-invite", { method: "POST", body: JSON.stringify({ ids }) }); }
+
+export type LeadRow = { rank: number; id: string; company: string; category: string; location: string; logoUrl: string; score: number; tier: string; trend7d: number; reviews: number; revenue: number; lastActivity: string };
+export type LeadScoringData = {
+  kpis: { totalScored: Kpi; highValue: Kpi; mediumValue: Kpi; lowValue: Kpi; avgScore: Kpi };
+  components: { label: string; weight: number; value: number }[];
+  distribution: { total: number; segments: Seg[] };
+  breakdown: { label: string; count: number; pct: number }[];
+  sources: { source: string; score: number; count: number }[];
+  highValueOpps: { notContacted: number; potentialRevenue: number; avgScore: number };
+  tips: string[];
+  table: { rows: LeadRow[]; total: number; page: number; perPage: number; pages: number };
+  categories: string[]; locations: string[];
+};
+export function getLeadScoring(params: { q?: string; category?: string; location?: string; minScore?: number; page?: number; perPage?: number } = {}) {
+  const qs = new URLSearchParams(Object.fromEntries(Object.entries(params).filter(([, v]) => v !== "" && v != null).map(([k, v]) => [k, String(v)]))).toString();
+  return request<LeadScoringData>(`/admin/agents/marketplace/lead-scoring${qs ? `?${qs}` : ""}`);
+}
+
+export type CoverageCatRow = { category: string; count: number; target: number; coverage: number; newThisWeek: number; quality: number; claimedPct: number; highValueLeads: number; gap: number; potentialRevenue: number; trend: number[]; color: string; vs7d: number };
+export type CategoryCoverageData = {
+  kpis: { totalCategories: Kpi; totalProviders: Kpi; avgCoverage: Kpi; fullyCovered: Kpi; needsImprovement: Kpi; highValueOpps: Kpi };
+  coverageByCategory: CoverageCatRow[];
+  distribution: { total: number; segments: Seg[] };
+  opportunities: { category: string; coverage: number; target: number; gap: number; potentialRevenue: number; color: string }[];
+  heatmap: { category: string; cells: { location: string; count: number; coverage: number }[]; uaeAvg: number }[];
+  growthTrend: { labels: string[]; series: { label: string; color: string; points: number[] }[] };
+  locations: string[];
+};
+export function getCategoryCoverage() { return request<CategoryCoverageData>("/admin/agents/marketplace/category-coverage"); }
+
+export type CoverageLocRow = { location: string; count: number; target: number; coverage: number; newThisWeek: number; gap: number; potentialProviders: number; potentialRevenue: number; gapPct: number; color: string; trend: number[]; vs7d: number };
+export type LocationCoverageData = {
+  kpis: { totalLocations: Kpi; totalProviders: Kpi; avgCoverage: Kpi; fullyCovered: Kpi; needsImprovement: Kpi; highValueOpps: Kpi };
+  coverageByLocation: CoverageLocRow[];
+  mapPoints: { location: string; coverage: number; count: number; x: number; y: number; tier: string }[];
+  opportunities: { location: string; gapPct: number; potentialProviders: number; potentialRevenue: number }[];
+  insights: { text: string; icon: string }[];
+  heatmap: { location: string; cells: { category: string; count: number; coverage: number }[]; score: number }[];
+  coverageOverTime: { labels: string[]; series: { label: string; color: string; points: number[] }[] };
+  categories: string[];
+};
+export function getLocationCoverage() { return request<LocationCoverageData>("/admin/agents/marketplace/location-coverage"); }
+
+export type DQCatRow = { category: string; total: number; avgScore: number; highQuality: number; needsAttention: number; lowQuality: number; topIssue: string; trend: number[] };
+export type DataQualityData = {
+  kpis: { totalProfiles: Kpi; avgQuality: Kpi; highQuality: Kpi; needingAttention: Kpi; lowQuality: Kpi; dataIssues: Kpi };
+  distribution: { total: number; segments: Seg[] };
+  completeness: { label: string; pct: number }[];
+  trend: { label: string; value: number }[];
+  topIssues: { label: string; count: number }[];
+  byCategory: DQCatRow[];
+  improvement: { thisWeek: number; autoEnriched: number; manual: number; claimed: number };
+  enrichment: { enrichedThisWeek: number; accuracy: number; totalEnriched: number };
+  recentImprovements: { profile: string; category: string; fields: string; scoreAfter: number; improvedOn: string; source: string }[];
+  needingAttention: { id: string; profile: string; category: string; issueCount: number; criticalIssues: string; score: number }[];
+};
+export function getDataQuality() { return request<DataQualityData>("/admin/agents/marketplace/data-quality"); }
+export function mktEnrichBatch(limit = 5) { return request<{ ok: boolean; message?: string; count?: number }>("/admin/agents/marketplace/enrich-batch", { method: "POST", body: JSON.stringify({ limit }) }); }
+export function mktMergeDuplicates() { return request<{ ok: boolean; message?: string; count?: number }>("/admin/agents/marketplace/merge-duplicates", { method: "POST" }); }
+
+// ---- Expansion Opportunities ----
+export type ExpOpp = { opportunity: string; category: string; location: string; potentialProviders: number; estMonthlyRevenue: number; score: number; priority: string };
+export type ExpMatrixRow = { category: string; cells: { location: string; opp: number }[]; uaeAvg: number; potentialProviders: number };
+export type ExpansionData = {
+  kpis: { totalOpportunities: Kpi; highPriority: Kpi; potentialNewProviders: Kpi; estMonthlyRevenue: Kpi; estAnnualRevenue: Kpi; avgScore: Kpi };
+  topOpportunities: ExpOpp[];
+  pipeline: { stages: { label: string; value: number; color: string }[]; conversionRate: number; avgTimeToAction: number };
+  impact: { potentialNewProviders: number; potentialMonthlyRevenue: number; byCategory: { total: number; segments: Seg[] } };
+  matrix: { categories: string[]; rows: ExpMatrixRow[] };
+  locationHeatmap: { location: string; score: number; count: number; x: number; y: number; tier: string }[];
+  recentDiscoveries: { name: string; location: string; providers: number; estMonthlyRevenue: number; when: string }[];
+  sources: { label: string; count: number; pct: number; color: string }[];
+  summary: { totalOpportunities: number; highPriority: number; potentialNewProviders: number; estMonthlyRevenue: number; estAnnualRevenue: number; avgScore: number; providers: number };
+};
+export function getExpansionOpportunities() { return request<ExpansionData>("/admin/agents/marketplace/expansion-opportunities"); }
+
+// ---- Competitive Intelligence ----
+export type CompetitorRow = { name: string; category: string; estTraffic: number; share: number; trend: string };
+export type CIAlert = { title: string; detail: string; when: string; icon: string };
+export type ContentOpp = { opportunity: string; category: string; searchVolume: number; difficulty: number; competitorsRanking: number; ourRanking: number | null; score: number; priority: string };
+export type PricingRow = { service: string; ourPrice: number; competitorPrice: number; difference: number; real: boolean };
+export type SocialRow = { name: string; followers: number; engagementRate: number; topChannel: string; isUs: boolean };
+export type CompetitiveData = {
+  kpis: { competitorsMonitored: Kpi; marketShare: Kpi; shareOfVoice: Kpi; contentOpportunities: Kpi; rankingOpportunities: Kpi; newCompetitorsDetected: Kpi };
+  marketShare: { ourShare: number; total: number; segments: Seg[]; ranked: { name: string; share: number; isUs: boolean }[] };
+  shareOfVoice: { ourSoV: number; labels: string[]; series: { label: string; color: string; points: number[] }[] };
+  topCompetitors: CompetitorRow[];
+  alerts: CIAlert[];
+  topContentOpps: ContentOpp[];
+  contentGapSummary: { total: number; segments: Seg[] };
+  pricing: PricingRow[];
+  backlinks: { newBacklinks7d: number; lostBacklinks7d: number; totalBacklinks: number; topGains: { name: string; gained: number; source: string }[]; trend: number };
+  social: SocialRow[];
+  recommendations: { title: string; detail: string; priority: number }[];
+  summary: { competitors: number; ourShare: number; ourSoV: number; totalGaps: number; contentOpportunities: number };
+};
+export function getCompetitiveOverview() { return request<CompetitiveData>("/admin/agents/competitive/overview"); }
+export function ciScan(category = "Car Rental") { return request<{ ok: boolean; message?: string; count?: number; sources?: { title?: string; url?: string }[] }>("/admin/agents/competitive/scan", { method: "POST", body: JSON.stringify({ category }) }); }
+export function getCompetitiveBriefing() { return request<{ ok: boolean; text: string }>("/admin/agents/competitive/briefing"); }
+
 // ---- Email Outreach ----
 export type EmailOutreach = {
   kpis: { emailsSent: number; sentTrend: number; openRate: number; openTrend: number; clickRate: number; clickTrend: number; replyRate: number; replyTrend: number; meetingsBooked: number; meetingsTrend: number; bounced: number; bounceTrend: number };

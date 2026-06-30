@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   Sparkles, LogOut, ExternalLink,
-  LayoutDashboard, Crown, MessageSquare, ListChecks, ShieldCheck,
+  LayoutDashboard, Crown, MessageSquare, ListChecks,
   Megaphone, Search, PenLine, Send, Share2, Radar, Briefcase, UserCheck, Network,
   TrendingUp, BarChart3, DollarSign, FileText,
   Plug, Settings, ScrollText,
@@ -26,7 +26,6 @@ const GROUPS: NavGroup[] = [
       { label: "AI CEO / Orchestrator", icon: Crown, href: "/ceo", dot: true },
       { label: "Communication Center", icon: MessageSquare, href: "/communication", dot: true },
       { label: "Task Center", icon: ListChecks, href: "/tasks", dot: true },
-      { label: "Decision Center", icon: ShieldCheck, href: "/agents/brain", badge: "6" },
       { label: "Marketing Director", icon: Megaphone, href: "/agents/marketing", dot: true },
       { label: "SEO Agent", icon: Search, href: "/agents/seo", dot: true },
       { label: "Copywriter Agent", icon: PenLine, href: "/agents/copywriter", dot: true },

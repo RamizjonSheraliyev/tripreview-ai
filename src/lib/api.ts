@@ -255,7 +255,15 @@ export type SeoSignals = {
   ogTitle?: string; ogDescription?: string; ogImage?: string; twitterCard?: string;
   jsonLd?: number; h1Count?: number; h1?: string;
 };
-export type SeoIssue = CeoIssue & { recommend?: string };
+export type SeoIssue = CeoIssue & {
+  recommend?: string;
+  // Full English brief + live fix state (enriched by the backend SEO view).
+  why?: string;
+  plan?: string[];
+  proposalId?: string;
+  proposalStatus?: "proposed" | "applied" | "failed" | "";
+  fix?: { changes: FixChange[]; url: string; fieldLabel: string; result: string; appliedAt: string } | null;
+};
 export type SeoPageAudit = { path: string; title: string; score: number; issues: SeoIssue[]; signals: SeoSignals };
 export type SeoAuditSnapshot = {
   _id: string; overallScore: number; baseUrl: string; pages: SeoPageAudit[];
@@ -326,7 +334,12 @@ export function getRoi() {
 export type StrategyData = {
   kpis: { totalOpportunities: number; newThisWeek: number; highImpact: number; potentialRevenue: number; revenueTrend: number; trafficPotential: number; trafficTrend: number; implementationScore: number; avgConfidence: number };
   focusAreas: { title: string; desc: string; priority: string; progress: number; icon: string }[];
-  topOpportunities: { impact: string; title: string; trafficPotential: number; revenueImpact: number; confidence: number; effort: string }[];
+  topOpportunities: {
+    impact: string; title: string; trafficPotential: number; revenueImpact: number; confidence: number; effort: string;
+    // Enriched: proposal id + full English brief so the row opens a drawer and
+    // "Approve & Auto-fix" really executes.
+    id?: string; detail?: string; reason?: string; plan?: string[]; agent?: string; page?: string; path?: string; link?: string;
+  }[];
   funnel: { stages: { stage: string; count: number }[]; conversionRate: number };
   contentOpps: { topic: string; keyword: string; searchVolume: number; potentialTraffic: number; priority: string; assignedTo: string; status: string; revenueImpact: number }[];
   marketplaceOpps: { opportunity: string; potentialProviders: number; revenueImpact: number; priority: string; assignedTo: string; status: string }[];
@@ -468,6 +481,50 @@ export function agentChat(message: string, opts: { history?: AgentChatTurn[]; me
   });
 }
 
+// ---- Task-executing group chat (persisted, approve/reject cards) ----
+export type ChatCard = {
+  type: "blog" | "seo-fix" | "distribution" | "providers";
+  title: string;
+  subtitle?: string;
+  body?: string;
+  image?: string;
+  fields?: { label: string; value: string }[];
+  links?: { label: string; url: string }[];
+  why?: string;
+  plan?: string[];
+  items?: { id: string; label: string; sub: string }[];
+  fix?: { changes: FixChange[]; url: string } | null;
+  meta?: Record<string, unknown>;
+  approveLabel?: string;
+  rejectLabel?: string;
+};
+export type ChatMsg = {
+  id: string; conversation: string; role: "founder" | "agent"; agentId: string; name: string;
+  text: string; card: ChatCard | null; actionStatus: "" | "pending" | "approved" | "rejected";
+  actionResult: string; createdAt: string;
+};
+export function chatHistoryApi(conversation = "all") {
+  return request<{ messages: ChatMsg[] }>(`/admin/agents/ceo/chat/history?conversation=${encodeURIComponent(conversation)}`);
+}
+export function chatSendApi(message: string, opts: { history?: AgentChatTurn[]; mentionId?: string; imageBase64?: string; imageType?: string } = {}) {
+  return request<{ messages: ChatMsg[] }>("/admin/agents/ceo/chat/send", {
+    method: "POST",
+    body: JSON.stringify({
+      message,
+      history: (opts.history || []).map((h) => ({ role: h.role, name: h.name, text: h.text })),
+      mentionId: opts.mentionId || "",
+      imageBase64: opts.imageBase64 || "",
+      imageType: opts.imageType || "image/png",
+    }),
+  });
+}
+export function chatActApi(messageId: string, decision: "approve" | "reject") {
+  return request<{ ok: boolean; message?: string; msg?: ChatMsg }>("/admin/agents/ceo/chat/act", {
+    method: "POST",
+    body: JSON.stringify({ messageId, decision }),
+  });
+}
+
 // ---- Announcements — real broadcasts to the AI workforce ----
 export type AnnouncementItem = {
   id: string; title: string; sub: string; body: string;
@@ -513,10 +570,10 @@ export function deleteAnnouncement(id: string) {
 }
 
 export function getCeoSeo() {
-  return request<{ audit: SeoAuditSnapshot | null; proposals: CeoProposalItem[]; base: string; llm: boolean }>("/admin/agents/ceo/seo");
+  return request<{ audit: SeoAuditSnapshot | null; proposals: CeoProposalItem[]; fixed: CompletedFix[]; base: string; llm: boolean }>("/admin/agents/ceo/seo");
 }
 export function runCeoSeo() {
-  return request<{ audit: SeoAuditSnapshot; proposals: CeoProposalItem[]; base: string; llm: boolean }>("/admin/agents/ceo/seo/run", { method: "POST" });
+  return request<{ audit: SeoAuditSnapshot; proposals: CeoProposalItem[]; fixed: CompletedFix[]; base: string; llm: boolean }>("/admin/agents/ceo/seo/run", { method: "POST" });
 }
 export type LandingSection = { heading: string; body: string };
 export type LandingFaq = { q: string; a: string };
@@ -561,6 +618,12 @@ export type OrchTask = {
   tier: string;
   link: string;
   output: string;
+  // Full English brief (SEO proposals): why the issue matters + the exact
+  // steps Auto-fix will take. Older/brain tasks fall back to description.
+  reason?: string;
+  plan?: string[];
+  page?: string;
+  path?: string;
 };
 export type OrchStats = {
   total: number; completed: number; completedPct: number;
@@ -585,6 +648,16 @@ export function executeCeoTask(id: string) {
     "/admin/agents/ceo/orchestration/execute",
     { method: "POST", body: JSON.stringify({ id }) }
   );
+}
+// Completed fixes — applied/failed proposals with full before → after diffs.
+export type FixChange = { field: string; before: string; after: string };
+export type CompletedFix = {
+  id: string; task: string; detail: string; page: string; path: string; url: string;
+  agent: string; department: string; severity: string; status: "Completed" | "Failed";
+  result: string; appliedAt: string; check: string; fieldLabel: string; changes: FixChange[];
+};
+export function getCeoCompletedFixes() {
+  return request<{ fixes: CompletedFix[] }>("/admin/agents/ceo/orchestration/completed");
 }
 // Focused chat about ONE task/issue — the assigned agent explains + recommends.
 export type TaskChatTurn = { role: "founder" | "agent"; text: string };
@@ -1048,7 +1121,7 @@ export function salesOnboard(id: string) { return request<{ ok: boolean; email?:
 export function salesAutoReply(id: string) { return request<{ ok: boolean; intent?: string; reply?: string; onboarded?: boolean; email?: string; message?: string }>(`/admin/agents/sales/leads/${id}/autoreply`, { method: "POST" }); }
 
 // ---- Provider Onboarding Agent ----
-export type Kpi = { value: number; trend: number; suffix?: string; prefix?: string; est?: boolean };
+export type Kpi = { value: number; trend: number; suffix?: string; prefix?: string; est?: boolean; isMinutes?: boolean; isSeconds?: boolean };
 export type Seg = { label: string; count: number; color: string; pct: number };
 export type OnbClaim = { id: string; company: string; contact: string; contactEmail: string; category: string; submittedAt: string; status: string; assignedTo: string; rating: number; ratingCount: number; logoUrl: string; strength: number };
 export type OnbChecklist = { key: string; status: string };
@@ -1424,6 +1497,217 @@ export type CompetitiveData = {
 export function getCompetitiveOverview() { return request<CompetitiveData>("/admin/agents/competitive/overview"); }
 export function ciScan(category = "Car Rental") { return request<{ ok: boolean; message?: string; count?: number; sources?: { title?: string; url?: string }[] }>("/admin/agents/competitive/scan", { method: "POST", body: JSON.stringify({ category }) }); }
 export function getCompetitiveBriefing() { return request<{ ok: boolean; text: string }>("/admin/agents/competitive/briefing"); }
+
+export type CompetitorFull = { id: string; name: string; website: string; category: string; estTraffic: number; marketShare: number; domainRating: number; backlinks: number; reviewCount: number; avgRating: number; competitiveScore: number; threat: string; trend: string; sparkline: number[]; source: string; lastUpdated: string };
+export type CompetitorsData = {
+  kpis: { totalCompetitors: Kpi; activeCompetitors: Kpi; newCompetitors: Kpi; highThreat: Kpi; marketCoverage: Kpi };
+  table: { rows: CompetitorFull[]; total: number; page: number; perPage: number; pages: number };
+  byCategory: { total: number; segments: Seg[] };
+  scoreDistribution: { label: string; range: number[]; count: number; pct: number; color: string }[];
+  threats: { name: string; threat: string; score: number }[];
+  quickComparison: { name: string; category: string; estTraffic: number; share: number; score: number; sparkline: number[] }[];
+  categories: string[];
+};
+export function getCompetitors(params: { category?: string; q?: string; page?: number; perPage?: number } = {}) {
+  const qs = new URLSearchParams(Object.fromEntries(Object.entries(params).filter(([, v]) => v !== "" && v != null).map(([k, v]) => [k, String(v)]))).toString();
+  return request<CompetitorsData>(`/admin/agents/competitive/competitors${qs ? `?${qs}` : ""}`);
+}
+export function ciAddCompetitor(body: { name: string; website?: string; category?: string; estTraffic?: number; domainRating?: number; socialFollowers?: number }) { return request<{ ok: boolean; message?: string }>("/admin/agents/competitive/competitors", { method: "POST", body: JSON.stringify(body) }); }
+
+export type ContentItem = { id: string; title: string; url: string; competitorName: string; website: string; type: string; category: string; targetKeyword: string; platforms: string[]; engagement: number; trendUp: boolean; publishedAt: string };
+export type ContentIntelData = {
+  kpis: { totalNewContent: Kpi; newBlogPosts: Kpi; newLandingPages: Kpi; newGuides: Kpi; newComparisonPages: Kpi; updatedPages: Kpi };
+  table: { rows: ContentItem[]; total: number; page: number; perPage: number; pages: number };
+  typeDistribution: { total: number; segments: Seg[] };
+  topTopics: { topic: string; mentions: number; trendUp: boolean }[];
+  alerts: { title: string; when: string }[];
+  recentHighlights: { competitorName: string; title: string; type: string; category: string; summary: string; publishedAt: string; engagement: number; url: string }[];
+  competitors: string[];
+  types: string[];
+  empty: boolean;
+};
+export function getContentIntelligence(params: { competitor?: string; category?: string; type?: string; q?: string; page?: number; perPage?: number } = {}) {
+  const qs = new URLSearchParams(Object.fromEntries(Object.entries(params).filter(([, v]) => v !== "" && v != null).map(([k, v]) => [k, String(v)]))).toString();
+  return request<ContentIntelData>(`/admin/agents/competitive/content${qs ? `?${qs}` : ""}`);
+}
+export function ciScanContent(limit = 6) { return request<{ ok: boolean; message?: string; count?: number }>("/admin/agents/competitive/content/scan", { method: "POST", body: JSON.stringify({ limit }) }); }
+
+export type PageOpp = { keyword: string; slug: string; category: string; contentType: string; searchVolume: number; kd: number; ranking: string[]; ourRanking: number | null; trafficPotential: number; priority: string };
+export type PageOppsData = {
+  kpis: { totalPageOpportunities: Kpi; highPriority: Kpi; estTrafficPotential: Kpi; avgKeywordDifficulty: Kpi; pageOppsAdded: Kpi; top3Competitors: string[] };
+  table: { rows: PageOpp[]; total: number; page: number; perPage: number; pages: number };
+  byPriority: { total: number; segments: Seg[] };
+  trafficForecast: { labels: string[]; points: number[]; total: number };
+  topCategories: { label: string; count: number; pct: number; color: string }[];
+  aiInsight: string;
+  counts: { high: number; total: number };
+  competitors: string[];
+  types: string[];
+};
+export function getPageOpportunities(params: { category?: string; type?: string; priority?: string; competitor?: string; q?: string; page?: number; perPage?: number } = {}) {
+  const qs = new URLSearchParams(Object.fromEntries(Object.entries(params).filter(([, v]) => v !== "" && v != null).map(([k, v]) => [k, String(v)]))).toString();
+  return request<PageOppsData>(`/admin/agents/competitive/page-opportunities${qs ? `?${qs}` : ""}`);
+}
+
+export type BacklinkRow = { domain: string; dr: number; traffic: string; linkType: string; anchor: string; linkedPage: string; firstSeen: string; competitor: string };
+export type BacklinkData = {
+  kpis: { totalBacklinks: Kpi; newBacklinks: Kpi; lostBacklinks: Kpi; referringDomains: Kpi; avgDomainRating: Kpi; linksToUs: Kpi };
+  growthOverTime: { labels: string[]; series: { label: string; color: string; points: number[] }[] };
+  byType: { total: number; segments: Seg[] };
+  topAnchors: { anchor: string; backlinks: number; pct: number }[];
+  newBacklinks: { rows: BacklinkRow[]; total: number; page: number; perPage: number; pages: number };
+  topLinkingDomains: { domain: string; dr: number; backlinks: number; trend: number[] }[];
+  profileComparison: { name: string; isUs: boolean; backlinks: number; referringDomains: number; dr: number; ur: number; dofollowPct: number; trend: number[] }[];
+  sourcesDistribution: { total: number; segments: Seg[] };
+  opportunities: { domain: string; dr: number; type: string; reason: string; action: string }[];
+  competitors: string[];
+  linkTypes: string[];
+};
+export function getBacklinkIntel(params: { competitor?: string; type?: string; q?: string; page?: number; perPage?: number } = {}) {
+  const qs = new URLSearchParams(Object.fromEntries(Object.entries(params).filter(([, v]) => v !== "" && v != null).map(([k, v]) => [k, String(v)]))).toString();
+  return request<BacklinkData>(`/admin/agents/competitive/backlinks${qs ? `?${qs}` : ""}`);
+}
+
+export type ReportRow = { key: string; name: string; desc: string; type: string; period: string; competitors: string; insights: string[]; generatedOn: string };
+export type ScheduledRow = { id: string; name: string; frequency: string; recipients: string[]; nextRun: string; status: string };
+export type ReportsData = {
+  kpis: { totalReportsGenerated: Kpi; thisWeekChanges: Kpi; opportunitiesIdentified: Kpi; potentialTraffic: Kpi; potentialValue: Kpi; avgConfidence: Kpi };
+  recentReports: { rows: ReportRow[]; total: number; shown: number };
+  reportsOverview: { labels: string[]; series: { label: string; color: string; points: number[] }[] };
+  topOpportunityAreas: { label: string; traffic: number; value: number; pct: number; color: string }[];
+  scheduledReports: ScheduledRow[];
+  reportInsights: { icon: string; text: string; sub: string }[];
+  reportTypes: { key: string; name: string }[];
+  periods: string[];
+};
+export function getReports(params: { period?: string } = {}) {
+  const qs = new URLSearchParams(Object.fromEntries(Object.entries(params).filter(([, v]) => v !== "" && v != null).map(([k, v]) => [k, String(v)]))).toString();
+  return request<ReportsData>(`/admin/agents/competitive/reports${qs ? `?${qs}` : ""}`);
+}
+export function ciGenerateReport(body: { key: string; name?: string }) { return request<{ ok: boolean; filename: string; content: string; message?: string }>("/admin/agents/competitive/reports/generate", { method: "POST", body: JSON.stringify(body) }); }
+export function ciScheduleReport(body: { name: string; frequency?: string; recipients?: string[]; reportType?: string }) { return request<{ ok: boolean; message?: string }>("/admin/agents/competitive/reports/schedule", { method: "POST", body: JSON.stringify(body) }); }
+export function ciToggleSchedule(id: string) { return request<{ ok: boolean; message?: string; status?: string }>(`/admin/agents/competitive/reports/schedule/${id}/toggle`, { method: "POST" }); }
+export function ciDeleteSchedule(id: string) { return request<{ ok: boolean; message?: string }>(`/admin/agents/competitive/reports/schedule/${id}`, { method: "DELETE" }); }
+
+// ---- Content Distribution ----
+export type DistRow = { id: string; title: string; channels: string[]; distributedOn: string; reach: number; clicks: number; engagements: number; leads: number; status: string; scheduledAt: string | null };
+export type DistChannel = { key: string; label: string; color: string; connected: boolean; posts: number; hint: string };
+export type DistributionData = {
+  kpis: { totalContentDistributed: Kpi; totalReach: Kpi; totalClicks: Kpi; totalEngagements: Kpi; leadsGenerated: Kpi; avgDistributionTime: Kpi };
+  byChannel: { total: number; segments: { label: string; key: string; count: number; pct: number; color: string }[] };
+  performanceTrend: { labels: string[]; series: { label: string; color: string; points: number[] }[] };
+  topChannels: { rank: number; key: string; label: string; color: string; leads: number; pct: number }[];
+  recentDistributions: DistRow[];
+  upcoming: { title: string; channel: string; channelLabel: string; scheduledAt: string; status: string }[];
+  funnel: { label: string; value: number; pct: number }[];
+  bestContent: { title: string; leads: number; reach: number }[];
+  insights: { text: string }[];
+  distributionRules: { id: string; name: string; trigger: string; channel: string; active: boolean }[];
+  repurposing: { from: string; to: string; count: number; icon: string }[];
+  channels: DistChannel[];
+  connectedCount: number;
+  contentLibrary: { id: string; title: string }[];
+};
+export function getDistributionOverview() { return request<DistributionData>("/admin/agents/distribution/overview"); }
+export function distDistribute(body: { blogId?: string; title?: string; content?: string; channels: string[]; schedule?: string | null }) { return request<{ ok: boolean; message?: string; created?: number }>("/admin/agents/distribution/distribute", { method: "POST", body: JSON.stringify(body) }); }
+export function distRun(id: string) { return request<{ ok: boolean; message?: string; published?: number; skipped?: number }>("/admin/agents/distribution/run", { method: "POST", body: JSON.stringify({ id }) }); }
+export function distToggleRule(id: string) { return request<{ ok: boolean; message?: string; active?: boolean }>(`/admin/agents/distribution/rules/${id}/toggle`, { method: "POST" }); }
+export function distCreateRule(body: { name: string; channel?: string; trigger?: string; action?: string }) { return request<{ ok: boolean; message?: string }>("/admin/agents/distribution/rules", { method: "POST", body: JSON.stringify(body) }); }
+
+export type ChannelRow = { key: string; label: string; color: string; type: string; reach: number; clicks: number; engagements: number; leads: number; ctr: number; status: string; connected: boolean; posts: number; trend: number[]; hint: string };
+export type ChannelsData = {
+  kpis: { totalChannels: Kpi; totalReach: Kpi; totalClicks: Kpi; totalEngagements: Kpi; leadsGenerated: Kpi; avgDistributionTime: Kpi };
+  channels: ChannelRow[];
+  typeDistribution: { total: number; segments: Seg[] };
+  health: { active: { count: number; pct: number }; underperforming: { count: number; pct: number }; inactive: { count: number; pct: number } };
+  details: { key: string; label: string; color: string; reach: number; clicks: number; leads: number; ctr: number; status: string; trend: number[] }[];
+  types: string[];
+  connectedCount: number;
+};
+export function getDistributionChannels(params: { q?: string; type?: string; status?: string } = {}) {
+  const qs = new URLSearchParams(Object.fromEntries(Object.entries(params).filter(([, v]) => v !== "" && v != null).map(([k, v]) => [k, String(v)]))).toString();
+  return request<ChannelsData>(`/admin/agents/distribution/channels${qs ? `?${qs}` : ""}`);
+}
+
+export type SchedPost = { id: string; title: string; channel: string; channelLabel: string; color: string; type: string; status: string; time: string; timeLabel: string; reach: number; engagement: number };
+export type SchedDay = { date: string; dayName: string; dayNum: number; isToday: boolean; posts: SchedPost[] };
+export type ScheduledData = {
+  kpis: { scheduledPosts: Kpi; toBePublished: Kpi; published: Kpi; failedSkipped: Kpi; totalReach: Kpi; engagement: Kpi };
+  calendar: { weekStart: string; days: SchedDay[] };
+  upcoming: { id: string; title: string; channel: string; channelLabel: string; color: string; type: string; timeLabel: string; rel: string }[];
+  summary: { total: number; segments: Seg[] };
+  bestTimes: { key: string; label: string; color: string; window: string }[];
+  queue: { id: string; title: string; channel: string; channelLabel: string; color: string; scheduledOn: string; timeLabel: string; status: string; reach: number; engagement: number }[];
+  automation: { id: string; name: string; trigger: string; active: boolean }[];
+  channels: { key: string; label: string }[];
+  contentLibrary: number;
+};
+export function getScheduledDistribution() { return request<ScheduledData>("/admin/agents/distribution/scheduled"); }
+export function distReschedule(id: string, scheduledAt: string) { return request<{ ok: boolean; message?: string }>("/admin/agents/distribution/reschedule", { method: "POST", body: JSON.stringify({ id, scheduledAt }) }); }
+export function distDuplicate(id: string) { return request<{ ok: boolean; message?: string }>("/admin/agents/distribution/duplicate", { method: "POST", body: JSON.stringify({ id }) }); }
+export function distDeletePost(id: string) { return request<{ ok: boolean; message?: string }>(`/admin/agents/distribution/post/${id}`, { method: "DELETE" }); }
+
+export type DistRule = { id: string; name: string; description: string; trigger: string; triggerType: string; channels: string[]; conditions: string[]; status: string; executions: number; reach: number; engagement: number; successRate: number; lastExecuted: string | null };
+export type RulesData = {
+  kpis: { totalRules: Kpi; activeRules: Kpi; autoPublished7d: Kpi; channelsCovered: Kpi; successRate: Kpi; avgExecutionTime: Kpi };
+  rules: { rows: DistRule[]; total: number; page: number; perPage: number; pages: number };
+  triggerLibrary: { type: string; icon: string; count: number }[];
+  executionLog: { rule: string; when: string; status: string }[];
+  performance: { total: number; segments: Seg[] };
+  topRules: { name: string; executions: number; reach: number; engagement: number; successRate: number }[];
+  channelMeta: Record<string, { label: string; color: string }>;
+  triggerTypes: string[];
+  allChannels: string[];
+  steps: string[];
+};
+export function getDistributionRules(params: { status?: string; trigger?: string; channel?: string; q?: string; page?: number; perPage?: number } = {}) {
+  const qs = new URLSearchParams(Object.fromEntries(Object.entries(params).filter(([, v]) => v !== "" && v != null).map(([k, v]) => [k, String(v)]))).toString();
+  return request<RulesData>(`/admin/agents/distribution/rules${qs ? `?${qs}` : ""}`);
+}
+export function distCreateRuleFull(body: { name: string; description?: string; channels?: string[]; trigger?: string; triggerType?: string; conditions?: string[]; action?: string; status?: string }) { return request<{ ok: boolean; message?: string }>("/admin/agents/distribution/rules", { method: "POST", body: JSON.stringify(body) }); }
+export function distRuleStatus(id: string, status: string) { return request<{ ok: boolean; message?: string }>(`/admin/agents/distribution/rules/${id}/status`, { method: "POST", body: JSON.stringify({ status }) }); }
+export function distRunRule(id: string) { return request<{ ok: boolean; message?: string; created?: number }>(`/admin/agents/distribution/rules/${id}/run`, { method: "POST" }); }
+export function distDuplicateRule(id: string) { return request<{ ok: boolean; message?: string }>(`/admin/agents/distribution/rules/${id}/duplicate`, { method: "POST" }); }
+export function distDeleteRule(id: string) { return request<{ ok: boolean; message?: string }>(`/admin/agents/distribution/rules/${id}`, { method: "DELETE" }); }
+
+export type RepurposeRow = { id: string; title: string; type: string; publishedOn: string; channels: string[]; assets: number; status: string; lastRepurposed: string | null };
+export type RepurposingData = {
+  kpis: { totalRepurposed: Kpi; assetsGenerated: Kpi; contentPieces: Kpi; engagement: Kpi; traffic: Kpi; avgRepurposingTime: Kpi };
+  content: { rows: RepurposeRow[]; total: number; page: number; perPage: number; pages: number };
+  formats: { total: number; segments: Seg[] };
+  efficiency: { timeSaved: number; costSaved: number; aiAccuracy: number };
+  insights: { text: string }[];
+  channelMeta: Record<string, { label: string; color: string }>;
+  assetTypes: string[];
+  repurposeChannels: string[];
+  types: string[];
+  contentLibrary: { id: string; title: string; type: string; publishedOn: string }[];
+};
+export function getContentRepurposing(params: { q?: string; type?: string; status?: string; page?: number; perPage?: number } = {}) {
+  const qs = new URLSearchParams(Object.fromEntries(Object.entries(params).filter(([, v]) => v !== "" && v != null).map(([k, v]) => [k, String(v)]))).toString();
+  return request<RepurposingData>(`/admin/agents/distribution/repurposing${qs ? `?${qs}` : ""}`);
+}
+export function distRepurpose(body: { blogId: string; channels: string[]; assetTypes: string[] }) { return request<{ ok: boolean; message?: string; count?: number }>("/admin/agents/distribution/repurpose", { method: "POST", body: JSON.stringify(body) }); }
+
+export type CommunityRow = { id: string; name: string; platform: string; color: string; niche: string; members: number; engagementLevel: string; status: string; lastActivity: string; engagements: number; clicks: number; engRate: number; url: string; postsShared: number };
+export type OutreachData = {
+  kpis: { communitiesMonitored: Kpi; activeCommunities: Kpi; postsShared: Kpi; engagements: Kpi; clicksGenerated: Kpi; newCommunitiesFound: Kpi };
+  communities: { rows: CommunityRow[]; total: number; page: number; perPage: number; pages: number };
+  overview: { labels: string[]; series: { label: string; color: string; points: number[] }[] };
+  topPerforming: { name: string; color: string; engagements: number; clicks: number; engRate: number }[];
+  discovery: CommunityRow[];
+  contentOpportunities: { idea: string; community: string; communityColor: string }[];
+  outreachActivity: { text: string; when: string }[];
+  outreachTips: string[];
+  platforms: string[];
+  niches: string[];
+};
+export function getCommunityOutreach(params: { q?: string; platform?: string; niche?: string; status?: string; engagement?: string; page?: number; perPage?: number } = {}) {
+  const qs = new URLSearchParams(Object.fromEntries(Object.entries(params).filter(([, v]) => v !== "" && v != null).map(([k, v]) => [k, String(v)]))).toString();
+  return request<OutreachData>(`/admin/agents/distribution/communities${qs ? `?${qs}` : ""}`);
+}
+export function distAddCommunity(id: string) { return request<{ ok: boolean; message?: string }>(`/admin/agents/distribution/communities/${id}/add`, { method: "POST" }); }
+export function distShareCommunity(id: string, contentTitle?: string) { return request<{ ok: boolean; message?: string }>(`/admin/agents/distribution/communities/${id}/share`, { method: "POST", body: JSON.stringify({ contentTitle }) }); }
 
 // ---- Email Outreach ----
 export type EmailOutreach = {

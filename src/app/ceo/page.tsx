@@ -16,14 +16,14 @@ import {
 } from "lucide-react";
 import {
   fetchMe, getStoredUser, getStats, getActivity, getSeries, getBrainTasks, approveBrainTask, dismissBrainTask,
-  getCeoOverview, ceoAsk, getCeoOrchestration, executeCeoTask, taskChat,
+  getCeoOverview, ceoAsk, getCeoOrchestration, executeCeoTask, taskChat, getCeoCompletedFixes,
   getCeoAudit, runCeoAudit, approveCeoProposal, rejectCeoProposal,
   getCeoSeo, runCeoSeo, getWorkforce, getRoi, getStrategy, generateStrategy, assignAgentTask, toggleAgentPause, agentChat, generateLandingPage, listLandingPages, getLandingPageById, editLandingPageAI, publishLandingPage,
   type GeneratedPage, type LandingPageFull, type RoiData, type StrategyData,
   type Workforce, type WfAgent, type WfApproval, type AgentChatTurn,
   type Stats, type Activity, type SeriesPoint, type BrainTask, type CeoOverview, type CeoOpportunity,
-  type Orchestration as OrchData, type OrchTask, type OrchStatus,
-  type CeoAuditSnapshot, type CeoProposalItem, type CeoAction, type CeoSource, type SeoAuditSnapshot,
+  type Orchestration as OrchData, type OrchTask, type OrchStatus, type CompletedFix,
+  type CeoAuditSnapshot, type CeoProposalItem, type CeoAction, type CeoSource, type SeoAuditSnapshot, type SeoIssue,
 } from "@/lib/api";
 import { speakUz } from "@/lib/voice";
 import Sidebar from "@/components/Sidebar";
@@ -721,10 +721,16 @@ function Orchestration() {
   const [agentF, setAgentF] = useState("All");
   const [priorityF, setPriorityF] = useState("All");
   const [flowView, setFlowView] = useState<"Flow View" | "Timeline View">("Flow View");
+  const [fixes, setFixes] = useState<CompletedFix[]>([]);
+  const [selFix, setSelFix] = useState<CompletedFix | null>(null);
 
   const load = useMemo(() => async () => {
-    const d = await getCeoOrchestration().catch(() => null);
+    const [d, f] = await Promise.all([
+      getCeoOrchestration().catch(() => null),
+      getCeoCompletedFixes().catch(() => null),
+    ]);
     setData(d);
+    if (f) setFixes(f.fixes);
   }, []);
   useEffect(() => { setLoading(true); load().finally(() => setLoading(false)); }, [load]);
 
@@ -919,7 +925,44 @@ function Orchestration() {
         </Panel></FadeUp>
       </div>
 
+      {/* Completed tasks — real applied fixes with before → after diffs */}
+      <FadeUp>
+        <Panel title="Completed Tasks" sub="Fixes the AI workforce has applied — click a row to see exactly what changed" right={<span className="text-[10px] font-bold px-2 py-1 rounded-lg bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">{fixes.filter((f) => f.status === "Completed").length} applied</span>}>
+          {fixes.length === 0 ? (
+            <div className="py-8 text-center text-[12px] text-slate-500">No completed fixes yet — approve a task above and it will land here with a full before → after diff.</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="text-slate-500 text-left border-b border-ink-800">
+                    <th className="font-medium py-2 px-2">Task</th>
+                    <th className="font-medium px-2">Page</th>
+                    <th className="font-medium px-2">Agent</th>
+                    <th className="font-medium px-2">What Changed</th>
+                    <th className="font-medium px-2">Applied</th>
+                    <th className="font-medium text-center px-2">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {fixes.slice(0, 12).map((f) => (
+                    <tr key={f.id} onClick={() => setSelFix(f)} className="border-b border-ink-900/60 hover:bg-ink-800/30 cursor-pointer">
+                      <td className="py-2.5 px-2"><div className="flex items-center gap-2"><CheckCircle2 className={`w-3.5 h-3.5 shrink-0 ${f.status === "Completed" ? "text-emerald-400" : "text-rose-400"}`} /><span className="text-slate-200 font-medium truncate max-w-[220px]">{f.task}</span></div></td>
+                      <td className="px-2 text-slate-400 whitespace-nowrap">{f.path ? `/en${f.path === "/" ? "" : f.path}` : "—"}</td>
+                      <td className="px-2 text-slate-300 whitespace-nowrap">{f.agent}</td>
+                      <td className="px-2 text-slate-400 truncate max-w-[260px]">{f.fieldLabel ? `${f.fieldLabel}${f.changes[0] ? `: “${(f.changes[0].before || "(empty)").slice(0, 40)}” → “${f.changes[0].after.slice(0, 40)}”` : ""}` : f.result.slice(0, 80)}</td>
+                      <td className="px-2 text-slate-500 whitespace-nowrap">{f.appliedAt ? dateShort(f.appliedAt) : "—"}</td>
+                      <td className="px-2 text-center"><span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${f.status === "Completed" ? "bg-emerald-500/15 text-emerald-300" : "bg-rose-500/15 text-rose-300"}`}>{f.status}</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Panel>
+      </FadeUp>
+
       {sel && <TaskDetails task={sel} busy={busyId === sel.id} onExec={() => exec(sel)} onClose={() => setSel(null)} />}
+      {selFix && <FixDetails fix={selFix} onClose={() => setSelFix(null)} />}
     </div>
   );
 }
@@ -962,7 +1005,31 @@ function TaskDetails({ task, busy, onExec, onClose }: { task: OrchTask; busy: bo
           <div>
             <h3 className="text-base font-bold text-white">{task.task}</h3>
             <p className="text-[12px] text-slate-400 mt-1 leading-relaxed">{task.description}</p>
+            {task.path && (
+              <a href={task.link || "#"} target="_blank" rel="noreferrer" className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-semibold text-brand-400 hover:underline">
+                <Globe className="w-3 h-3" /> {task.page ? `${task.page} — ` : ""}/en{task.path === "/" ? "" : task.path} <ArrowRight className="w-3 h-3" />
+              </a>
+            )}
           </div>
+          {task.reason && (
+            <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-3">
+              <div className="text-[10px] font-bold uppercase tracking-wide text-amber-300/90 mb-1">Why this matters</div>
+              <p className="text-[12px] text-slate-300 leading-relaxed">{task.reason}</p>
+            </div>
+          )}
+          {task.plan && task.plan.length > 0 && (
+            <div className="rounded-xl border border-brand-500/20 bg-brand-500/5 p-3">
+              <div className="text-[10px] font-bold uppercase tracking-wide text-brand-300/90 mb-1.5">What the agent will do</div>
+              <ol className="space-y-1.5">
+                {task.plan.map((s, i) => (
+                  <li key={i} className="flex items-start gap-2 text-[12px] text-slate-300 leading-snug">
+                    <span className="shrink-0 w-4 h-4 rounded-full bg-brand-500/20 text-brand-300 grid place-items-center text-[9px] font-bold mt-0.5">{i + 1}</span>
+                    {s}
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-2 text-[11px]">
             <Field label="Assigned Agent" value={task.agent} />
             <Field label="Department" value={task.department} />
@@ -1009,6 +1076,69 @@ function TaskDetails({ task, busy, onExec, onClose }: { task: OrchTask; busy: bo
         </div>
       </motion.div>
       {chatOpen && <TaskChat task={task} onClose={() => setChatOpen(false)} />}
+    </div>
+  );
+}
+
+// Drawer for a completed fix — the full before → after diff, what page it
+// changed and a link straight to the live page so the change can be verified.
+function FixDetails({ fix, onClose }: { fix: CompletedFix; onClose: () => void }) {
+  const pagePath = fix.path ? `/en${fix.path === "/" ? "" : fix.path}` : "";
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end bg-black/50" onClick={onClose}>
+      <motion.div initial={{ x: 460 }} animate={{ x: 0 }} transition={{ type: "spring", damping: 26, stiffness: 240 }} onClick={(e) => e.stopPropagation()} className="w-full max-w-md h-full bg-ink-900 border-l border-ink-800 flex flex-col">
+        <div className="h-16 px-4 flex items-center gap-2 border-b border-ink-800 shrink-0">
+          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${fix.status === "Completed" ? "bg-emerald-500/15 text-emerald-300" : "bg-rose-500/15 text-rose-300"}`}>{fix.status}</span>
+          {fix.fieldLabel && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-brand-500/15 text-brand-300">{fix.fieldLabel}</span>}
+          <button onClick={onClose} className="ml-auto w-8 h-8 grid place-items-center rounded-lg text-slate-400 hover:bg-ink-800"><X className="w-4 h-4" /></button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin">
+          <div>
+            <h3 className="text-base font-bold text-white">{fix.task}</h3>
+            {fix.detail && <p className="text-[12px] text-slate-400 mt-1 leading-relaxed whitespace-pre-line">{fix.detail}</p>}
+          </div>
+          <div className="grid grid-cols-2 gap-2 text-[11px]">
+            <Field label="Fixed By" value={fix.agent} />
+            <Field label="Department" value={fix.department} />
+            <Field label="Page" value={pagePath || "—"} />
+            <Field label="Applied" value={fix.appliedAt ? dateTime(fix.appliedAt) : "—"} />
+          </div>
+          {fix.changes.length > 0 && (
+            <div>
+              <div className="text-[11px] font-bold text-slate-300 mb-2">What changed</div>
+              <div className="space-y-3">
+                {fix.changes.map((c, i) => (
+                  <div key={i} className="rounded-xl border border-ink-800 bg-ink-950/40 p-3 space-y-2">
+                    <div className="text-[10px] font-bold uppercase tracking-wide text-slate-500">{c.field}</div>
+                    <div className="rounded-lg border border-rose-500/20 bg-rose-500/5 p-2.5">
+                      <div className="text-[9px] font-bold uppercase text-rose-300/80 mb-1">Before</div>
+                      <div className="text-[12px] text-slate-300 leading-relaxed break-words">{c.before || <span className="text-slate-600 italic">(empty — the tag was missing)</span>}</div>
+                    </div>
+                    <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-2.5">
+                      <div className="text-[9px] font-bold uppercase text-emerald-300/80 mb-1">After</div>
+                      <div className="text-[12px] text-slate-200 leading-relaxed break-words">{c.after}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {fix.result && (
+            <div className="rounded-xl border border-ink-800 bg-ink-950/40 p-3">
+              <div className="text-[10px] text-slate-500 mb-1">Result</div>
+              <div className="text-[12px] text-slate-200 leading-relaxed">{fix.result}</div>
+            </div>
+          )}
+        </div>
+        {fix.url && (
+          <div className="p-3 border-t border-ink-800 shrink-0">
+            <a href={fix.url} target="_blank" rel="noreferrer" className="w-full inline-flex items-center justify-center gap-2 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 text-white text-sm font-bold">
+              <Globe className="w-4 h-4" /> View the fixed page <ArrowRight className="w-4 h-4" />
+            </a>
+            <p className="mt-1.5 text-center text-[10px] text-slate-500">Opens {pagePath || fix.url} — the change is live in the page&apos;s &lt;head&gt; within ~60s.</p>
+          </div>
+        )}
+      </motion.div>
     </div>
   );
 }
@@ -1344,6 +1474,8 @@ function PageBuilder() {
 function SeoAudit() {
   const [audit, setAudit] = useState<SeoAuditSnapshot | null>(null);
   const [proposals, setProposals] = useState<CeoProposalItem[]>([]);
+  const [fixed, setFixed] = useState<CompletedFix[]>([]);
+  const [selFix, setSelFix] = useState<CompletedFix | null>(null);
   const [base, setBase] = useState("");
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
@@ -1353,7 +1485,7 @@ function SeoAudit() {
 
   const load = useMemo(() => async () => {
     const d = await getCeoSeo().catch(() => null);
-    if (d) { setAudit(d.audit); setProposals(d.proposals); setBase(d.base); }
+    if (d) { setAudit(d.audit); setProposals(d.proposals); setFixed(d.fixed || []); setBase(d.base); }
   }, []);
   useEffect(() => { setLoading(true); load().finally(() => setLoading(false)); }, [load]);
 
@@ -1361,29 +1493,52 @@ function SeoAudit() {
     setRunning(true);
     try {
       const d = await runCeoSeo();
-      setAudit(d.audit); setProposals(d.proposals); setBase(d.base);
-      setToast(`✓ Crawled ${d.audit.crawled} routes — SEO audit refreshed.`);
+      setAudit(d.audit); setProposals(d.proposals); setFixed(d.fixed || []); setBase(d.base);
+      setToast(d.audit.crawled > 0 ? `✓ Crawled ${d.audit.crawled} routes — SEO audit refreshed.` : `⚠ 0 routes reachable — is the public site running at ${d.base}?`);
     } catch { setToast("Crawl failed — is the site reachable from the backend?"); }
-    finally { setRunning(false); setTimeout(() => setToast(""), 4500); }
+    finally { setRunning(false); setTimeout(() => setToast(""), 6000); }
   };
 
   const decide = async (id: string, action: "approve" | "reject") => {
     setBusyId(id);
     try {
       const r = action === "approve" ? await approveCeoProposal(id) : await rejectCeoProposal(id);
-      setProposals((p) => p.filter((x) => x._id !== id));
-      setToast(action === "approve" ? `✓ ${r.proposal.result || "Acknowledged"}` : "Dismissed.");
+      setToast(action === "approve" ? `✓ ${r.proposal.result || "Applied"}` : "Dismissed.");
+      await load(); // refresh issue states + the Fixed Issues feed
     } catch (e) { setToast(`Failed: ${e instanceof Error ? e.message : "error"}`); }
-    finally { setBusyId(null); setTimeout(() => setToast(""), 5000); }
+    finally { setBusyId(null); setTimeout(() => setToast(""), 6000); }
+  };
+
+  // Open the diff drawer for an already-fixed issue straight from its row.
+  const openFixFor = (i: SeoIssue, pageTitle: string, path: string) => {
+    if (!i.fix) return;
+    setSelFix({
+      id: i.proposalId || i.kind, task: i.title, detail: i.detail, page: pageTitle, path,
+      url: i.fix.url, agent: "SEO Agent", department: "Growth", severity: i.severity,
+      status: "Completed", result: i.fix.result, appliedAt: i.fix.appliedAt,
+      check: "", fieldLabel: i.fix.fieldLabel, changes: i.fix.changes,
+    });
   };
 
   const byKind = new Map(proposals.map((p) => [p.kind, p]));
+  const allUnreachable = !!audit && (audit.crawled ?? 0) === 0 && (audit.pages || []).length > 0;
 
   if (loading) return <div className="grid place-items-center py-24 text-slate-600"><Loader2 className="w-7 h-7 animate-spin" /></div>;
 
   return (
     <div className="space-y-5">
       {toast && <FadeUp><div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-2.5 text-xs text-emerald-200">{toast}</div></FadeUp>}
+      {allUnreachable && (
+        <FadeUp>
+          <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs text-amber-200 flex items-start gap-2.5">
+            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+            <div>
+              <div className="font-bold">The public site was not running during the last crawl.</div>
+              <div className="mt-0.5 text-amber-200/80">All {audit?.pages.length} routes came back unreachable because <span className="font-mono">{base || audit?.baseUrl}</span> did not respond. Start the public frontend (<span className="font-mono">frontend → npm run dev</span>, port 3000), then hit <b>Crawl Now</b> — the audit will re-grade every route from its live &lt;head&gt;.</div>
+            </div>
+          </div>
+        </FadeUp>
+      )}
 
       <PageBuilder />
 
@@ -1446,18 +1601,51 @@ function SeoAudit() {
                       )}
                       {p.issues.map((i) => {
                         const prop = byKind.get(i.kind);
+                        const isFixed = i.proposalStatus === "applied" && !!i.fix;
                         return (
-                          <div key={i.kind} className="flex items-start gap-2.5">
-                            <span className={`mt-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded shrink-0 ${sevTone(i.severity)}`}>{i.severity.toUpperCase()}</span>
-                            <div className="min-w-0 flex-1">
-                              <div className="text-[12px] font-semibold text-slate-100">{i.title}</div>
-                              <div className="text-[11px] text-slate-500 leading-snug">{i.detail}</div>
-                              {i.recommend && <div className="mt-1 text-[11px] text-emerald-300 bg-emerald-500/10 border border-emerald-500/20 rounded px-2 py-1 font-mono break-words">→ {i.recommend}</div>}
+                          <div key={i.kind} className="rounded-xl border border-ink-800/80 bg-ink-900/40 p-3 space-y-2">
+                            <div className="flex items-start gap-2.5">
+                              <span className={`mt-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded shrink-0 ${sevTone(i.severity)}`}>{i.severity.toUpperCase()}</span>
+                              <div className="min-w-0 flex-1">
+                                <div className="text-[12px] font-semibold text-slate-100">{i.title}</div>
+                                <div className="text-[11px] text-slate-500 leading-snug">{i.detail}</div>
+                              </div>
+                              {isFixed ? (
+                                <button onClick={() => openFixFor(i, p.title, p.path)} className="shrink-0 inline-flex items-center gap-1 px-2 h-7 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-[10px] font-bold hover:bg-emerald-500/25">
+                                  <CheckCircle2 className="w-3 h-3" /> Fixed — view diff
+                                </button>
+                              ) : i.proposalStatus === "failed" ? (
+                                <span className="shrink-0 inline-flex items-center gap-1 px-2 h-7 rounded-lg bg-rose-500/15 border border-rose-500/30 text-rose-300 text-[10px] font-bold"><XCircle className="w-3 h-3" /> Failed</span>
+                              ) : i.proposalStatus === "applied" ? (
+                                <span className="shrink-0 inline-flex items-center gap-1 px-2 h-7 rounded-lg bg-ink-800 border border-ink-700 text-slate-400 text-[10px] font-bold"><CheckCircle2 className="w-3 h-3" /> Acknowledged</span>
+                              ) : prop ? (
+                                <button onClick={() => decide(prop._id, "approve")} disabled={busyId === prop._id} className="shrink-0 inline-flex items-center gap-1 px-2 h-7 rounded-lg bg-gradient-to-r from-brand-500 to-violet-600 text-white text-[10px] font-bold disabled:opacity-50">
+                                  {busyId === prop._id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Wand2 className="w-3 h-3" />} Approve &amp; Auto-fix
+                                </button>
+                              ) : null}
                             </div>
-                            {prop && (
-                              <button onClick={() => decide(prop._id, "approve")} disabled={busyId === prop._id} className="shrink-0 inline-flex items-center gap-1 px-2 h-7 rounded-lg bg-gradient-to-r from-brand-500 to-violet-600 text-white text-[10px] font-bold disabled:opacity-50">
-                                {busyId === prop._id ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3" />} Acknowledge
-                              </button>
+                            {i.why && (
+                              <div className="rounded-lg border border-amber-500/15 bg-amber-500/5 px-2.5 py-2">
+                                <div className="text-[9px] font-bold uppercase tracking-wide text-amber-300/90 mb-0.5">Why this matters</div>
+                                <p className="text-[11px] text-slate-300 leading-relaxed">{i.why}</p>
+                              </div>
+                            )}
+                            {i.plan && i.plan.length > 0 && !isFixed && (
+                              <div className="rounded-lg border border-brand-500/15 bg-brand-500/5 px-2.5 py-2">
+                                <div className="text-[9px] font-bold uppercase tracking-wide text-brand-300/90 mb-1">What the agent will do</div>
+                                <ol className="space-y-1">
+                                  {i.plan.map((s, si) => (
+                                    <li key={si} className="flex items-start gap-1.5 text-[11px] text-slate-300 leading-snug">
+                                      <span className="shrink-0 w-3.5 h-3.5 rounded-full bg-brand-500/20 text-brand-300 grid place-items-center text-[8px] font-bold mt-0.5">{si + 1}</span>
+                                      {s}
+                                    </li>
+                                  ))}
+                                </ol>
+                              </div>
+                            )}
+                            {i.recommend && !isFixed && <div className="text-[11px] text-emerald-300 bg-emerald-500/10 border border-emerald-500/20 rounded px-2 py-1 font-mono break-words">→ {i.recommend}</div>}
+                            {isFixed && i.fix && (
+                              <div className="text-[11px] text-emerald-300/90 bg-emerald-500/5 border border-emerald-500/15 rounded px-2 py-1.5 leading-snug">{i.fix.result}</div>
                             )}
                           </div>
                         );
@@ -1484,8 +1672,8 @@ function SeoAudit() {
                   <div className="text-[11px] text-slate-500 leading-snug whitespace-pre-wrap">{p.detail}</div>
                 </div>
                 <div className="flex gap-1.5 shrink-0">
-                  <button onClick={() => decide(p._id, "approve")} disabled={busyId === p._id} className="inline-flex items-center gap-1 px-2.5 h-8 rounded-lg bg-emerald-600/90 hover:bg-emerald-600 text-white text-[11px] font-bold disabled:opacity-50">
-                    {busyId === p._id ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3" />} Acknowledge
+                  <button onClick={() => decide(p._id, "approve")} disabled={busyId === p._id} className="inline-flex items-center gap-1 px-2.5 h-8 rounded-lg bg-gradient-to-r from-brand-500 to-violet-600 text-white text-[11px] font-bold disabled:opacity-50">
+                    {busyId === p._id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Wand2 className="w-3 h-3" />} Approve &amp; Auto-fix
                   </button>
                   <button onClick={() => decide(p._id, "reject")} disabled={busyId === p._id} className="inline-flex items-center gap-1 px-2.5 h-8 rounded-lg border border-ink-700 text-slate-300 text-[11px] font-bold hover:bg-ink-800 disabled:opacity-50">
                     <XCircle className="w-3 h-3" /> Reject
@@ -1497,6 +1685,42 @@ function SeoAudit() {
           </ul>
         </Panel>
       </FadeUp>
+
+      {/* Fixed issues — every applied SEO fix with its before → after diff */}
+      <FadeUp>
+        <Panel title="Fixed Issues" sub="SEO fixes the agent has applied — click a row for the full before → after diff" right={<span className="text-[10px] font-bold px-2 py-1 rounded-lg bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">{fixed.filter((f) => f.status === "Completed").length} applied</span>}>
+          {fixed.length === 0 ? (
+            <div className="py-8 text-center text-[12px] text-slate-500">Nothing fixed yet — approve an issue above and it lands here with the exact change.</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="text-slate-500 text-left border-b border-ink-800">
+                    <th className="font-medium py-2 px-2">Issue</th>
+                    <th className="font-medium px-2">Page</th>
+                    <th className="font-medium px-2">What Changed</th>
+                    <th className="font-medium px-2">Applied</th>
+                    <th className="font-medium text-center px-2">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {fixed.slice(0, 15).map((f) => (
+                    <tr key={f.id} onClick={() => setSelFix(f)} className="border-b border-ink-900/60 hover:bg-ink-800/30 cursor-pointer">
+                      <td className="py-2.5 px-2"><div className="flex items-center gap-2"><CheckCircle2 className={`w-3.5 h-3.5 shrink-0 ${f.status === "Completed" ? "text-emerald-400" : "text-rose-400"}`} /><span className="text-slate-200 font-medium truncate max-w-[220px]">{f.task}</span></div></td>
+                      <td className="px-2 text-slate-400 whitespace-nowrap">{f.path ? `/en${f.path === "/" ? "" : f.path}` : "—"}</td>
+                      <td className="px-2 text-slate-400 truncate max-w-[280px]">{f.fieldLabel ? `${f.fieldLabel}${f.changes[0] ? `: “${(f.changes[0].before || "(empty)").slice(0, 38)}” → “${f.changes[0].after.slice(0, 38)}”` : ""}` : f.result.slice(0, 90)}</td>
+                      <td className="px-2 text-slate-500 whitespace-nowrap">{f.appliedAt ? dateShort(f.appliedAt) : "—"}</td>
+                      <td className="px-2 text-center"><span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${f.status === "Completed" ? "bg-emerald-500/15 text-emerald-300" : "bg-rose-500/15 text-rose-300"}`}>{f.status}</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Panel>
+      </FadeUp>
+
+      {selFix && <FixDetails fix={selFix} onClose={() => setSelFix(null)} />}
     </div>
   );
 }
@@ -2036,7 +2260,40 @@ function StrategyOpportunities() {
   const [gen, setGen] = useState(false);
   const [deptF, setDeptF] = useState("All Departments");
   const [note, setNote] = useState("");
+  const [sel, setSel] = useState<OrchTask | null>(null);
+  const [busyFix, setBusyFix] = useState(false);
   useEffect(() => { setLoading(true); getStrategy().then(setData).catch(() => {}).finally(() => setLoading(false)); }, []);
+
+  // Open an opportunity in the same rich drawer Task Orchestration uses —
+  // full English reason + step-by-step plan + a working Approve & Auto-fix.
+  const openOpp = (o: StrategyData["topOpportunities"][number]) => {
+    if (!o.id) return;
+    setSel({
+      id: o.id, task: o.title, description: (o.detail || "").split("\n")[0].slice(0, 200),
+      reason: o.reason, plan: o.plan, page: o.page, path: o.path,
+      agent: o.agent || "SEO Agent", department: "Growth",
+      priority: (o.impact === "High" || o.impact === "Low" ? o.impact : "Medium") as OrchTask["priority"],
+      status: "Waiting Approval", dueDate: new Date(Date.now() + 86400000).toISOString(),
+      impact: (o.impact === "High" || o.impact === "Low" ? o.impact : "Medium") as OrchTask["impact"],
+      confidence: o.confidence, progress: 0,
+      subtasks: (o.plan || []).map((label) => ({ label, done: false })),
+      action: "apply_proposal", tier: "approval", link: o.link || "", output: "",
+    });
+  };
+
+  const execOpp = async (t: OrchTask) => {
+    setBusyFix(true);
+    try {
+      const r = await executeCeoTask(t.id);
+      if (r.ok === false) setNote(`Failed: ${r.error || "could not apply"}`);
+      else setNote(`✓ ${r.result || "Applied"}`);
+      const fresh = await getStrategy().catch(() => null);
+      if (fresh) setData(fresh);
+      setSel(null);
+    } catch { setNote("Could not execute — check the AI CEO backend."); }
+    finally { setBusyFix(false); setTimeout(() => setNote(""), 6000); }
+  };
+
   if (loading || !data) return <div className="grid place-items-center py-24 text-slate-600"><Loader2 className="w-7 h-7 animate-spin" /></div>;
 
   const generate = async () => {
@@ -2101,12 +2358,19 @@ function StrategyOpportunities() {
                 <thead><tr className="text-[10px] uppercase tracking-wide text-slate-600 border-b border-ink-800"><th className="py-2 px-1 font-semibold">Opportunity</th><th className="font-semibold text-right">Traffic</th><th className="font-semibold text-right">Revenue</th><th className="font-semibold text-right">Conf.</th><th className="font-semibold text-right">Effort</th></tr></thead>
                 <tbody>
                   {data.topOpportunities.map((o, i) => (
-                    <tr key={i} className="border-b border-ink-900 hover:bg-ink-900/40">
-                      <td className="py-2.5 px-1"><span className={`text-[8px] font-bold px-1.5 py-0.5 rounded ${IMP_TONE[o.impact]}`}>{o.impact.toUpperCase()} IMPACT</span><div className="text-[11px] font-semibold text-white mt-1 leading-snug max-w-[200px]">{o.title}</div></td>
+                    <tr key={i} onClick={() => openOpp(o)} className={`border-b border-ink-900 hover:bg-ink-900/40 ${o.id ? "cursor-pointer" : ""}`}>
+                      <td className="py-2.5 px-1"><span className={`text-[8px] font-bold px-1.5 py-0.5 rounded ${IMP_TONE[o.impact]}`}>{o.impact.toUpperCase()} IMPACT</span><div className="text-[11px] font-semibold text-white mt-1 leading-snug max-w-[200px]">{o.title}</div>{o.path && <div className="text-[9px] text-slate-600 mt-0.5">/en{o.path === "/" ? "" : o.path}</div>}</td>
                       <td className="text-[11px] text-slate-300 text-right tabular-nums">{kfmt(o.trafficPotential)}</td>
                       <td className="text-[11px] text-white text-right tabular-nums font-semibold">{aedC(o.revenueImpact)}</td>
                       <td className="text-[11px] text-emerald-400 text-right tabular-nums font-bold">{o.confidence}%</td>
-                      <td className="text-right"><span className={`text-[10px] font-bold ${o.effort === "High" ? "text-rose-300" : o.effort === "Medium" ? "text-amber-300" : "text-emerald-300"}`}>{o.effort}</span></td>
+                      <td className="text-right">
+                        <span className={`text-[10px] font-bold ${o.effort === "High" ? "text-rose-300" : o.effort === "Medium" ? "text-amber-300" : "text-emerald-300"}`}>{o.effort}</span>
+                        {o.id && (
+                          <button onClick={(e) => { e.stopPropagation(); openOpp(o); }} className="ml-2 inline-flex items-center gap-1 px-1.5 h-6 rounded-md bg-gradient-to-r from-brand-500 to-violet-600 text-white text-[9px] font-bold align-middle">
+                            <Wand2 className="w-2.5 h-2.5" /> Fix
+                          </button>
+                        )}
+                      </td>
                     </tr>
                   ))}
                   {data.topOpportunities.length === 0 && <tr><td colSpan={5} className="py-8 text-center text-[12px] text-slate-500">No open opportunities — the site is in good shape. 🎉</td></tr>}
@@ -2193,6 +2457,8 @@ function StrategyOpportunities() {
           </Panel>
         </FadeUp>
       </div>
+
+      {sel && <TaskDetails task={sel} busy={busyFix} onExec={() => execOpp(sel)} onClose={() => setSel(null)} />}
     </div>
   );
 }

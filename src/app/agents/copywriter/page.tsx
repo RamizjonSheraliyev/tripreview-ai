@@ -1019,7 +1019,7 @@ function AIWritingTab() {
   const [briefId, setBriefId] = useState("");
   const [tone, setTone] = useState("Professional");
   const [lang, setLang] = useState("English (US)");
-  const [wc, setWc] = useState("1500 - 2000 words");
+  const [wc, setWc] = useState("2500 - 3500 words");
 
   const load = async () => { setLoading(true); try { setDash(await getWriting()); } finally { setLoading(false); } };
   useEffect(() => { load(); }, []);
@@ -1034,6 +1034,26 @@ function AIWritingTab() {
     finally { setBusy(""); }
   };
   const openDraft = async (id: string) => { setBusy("open"); try { const r = await getWritingDraft(id); if (r.ok && r.draft) setDraft(r.draft); } finally { setBusy(""); } };
+
+  // Full-article review drawer — the whole draft with real Approve & Publish /
+  // Reject & Delete, same pattern as the CEO task drawers.
+  const [review, setReview] = useState<WritingDraft | null>(null);
+  const [reviewBusy, setReviewBusy] = useState("");
+  const openReview = async (id: string) => { setBusy("open"); try { const r = await getWritingDraft(id); if (r.ok && r.draft) setReview(r.draft); } finally { setBusy(""); } };
+  const approveReview = async () => {
+    if (!review) return; setReviewBusy("pub");
+    try {
+      const r = await publishWritingDraft(review.id);
+      if (r.ok && r.draft) { setReview(r.draft); flash(`🚀 Published & live → ${r.url}`); load(); }
+      else flash(r.message || "Publish failed.");
+    } finally { setReviewBusy(""); }
+  };
+  const rejectReview = async () => {
+    if (!review) return; setReviewBusy("del");
+    try { await deleteWritingDraft(review.id); flash(`✕ Rejected — “${review.title.slice(0, 60)}” deleted.`); setReview(null); if (draft?.id === review.id) setDraft(null); load(); }
+    finally { setReviewBusy(""); }
+  };
+
   const save = async (status?: string) => {
     if (!draft) return; setBusy("save");
     try { const r = await saveWritingDraft(draft.id, { title, body, ...(status ? { status } : {}) }); if (r.ok && r.draft) { setDraft(r.draft); setSavedAt("just now"); flash(`✓ Saved — score ${r.draft.score.overall}/100.`); load(); } }
@@ -1091,10 +1111,10 @@ function AIWritingTab() {
             <button onClick={runNow} disabled={!!busy} className="mt-3 w-full inline-flex items-center justify-center gap-1.5 h-9 rounded-lg border border-brand-500/40 bg-brand-500/10 text-brand-200 text-[12px] font-semibold hover:bg-brand-500/20 disabled:opacity-50">{busy === "auto" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />} Run auto-writer now ({aw.count})</button>
           </div>
           <div>
-            <div className="flex items-center justify-between mb-2"><span className="text-[11px] font-semibold text-slate-300">Recently auto-written</span><span className="text-[9px] text-slate-600">click to open in editor</span></div>
+            <div className="flex items-center justify-between mb-2"><span className="text-[11px] font-semibold text-slate-300">Recently auto-written</span><span className="text-[9px] text-slate-600">click to review &amp; publish</span></div>
             {aw.feed.length === 0 ? <div className="text-[11px] text-slate-500 py-6 text-center">No agent-written drafts yet — hit “Run auto-writer now”.</div> :
               <ul className="space-y-1.5">{aw.feed.map((f) => (
-                <li key={f.id} onClick={() => openDraft(f.id)} className="flex items-center gap-2.5 rounded-lg border border-ink-800 bg-ink-950/40 px-2.5 py-2 cursor-pointer hover:border-brand-500/40">
+                <li key={f.id} onClick={() => openReview(f.id)} className="flex items-center gap-2.5 rounded-lg border border-ink-800 bg-ink-950/40 px-2.5 py-2 cursor-pointer hover:border-brand-500/40">
                   <span className="w-7 h-7 rounded-lg bg-brand-500/10 text-brand-300 grid place-items-center shrink-0"><Wand2 className="w-3.5 h-3.5" /></span>
                   <div className="min-w-0 flex-1"><div className="text-[11px] font-semibold text-white truncate">{f.title}</div><div className="text-[9px] text-slate-600">Copywriter Agent · {ago(f.date)}</div></div>
                   <span className="w-6 h-6 rounded-full border border-emerald-500/30 text-emerald-300 text-[9px] font-bold grid place-items-center shrink-0">{f.score}</span>
@@ -1118,7 +1138,7 @@ function AIWritingTab() {
               <div><label className="block text-[10px] text-slate-500 mb-1">Tone of Voice</label><select value={tone} onChange={(e) => setTone(e.target.value)} className="w-full rounded-lg border border-ink-700 bg-ink-950 px-2 h-9 text-[12px] text-slate-300">{["Professional", "Casual", "Friendly", "Authoritative", "Witty"].map((o) => <option key={o}>{o}</option>)}</select></div>
               <div><label className="block text-[10px] text-slate-500 mb-1">Language</label><select value={lang} onChange={(e) => setLang(e.target.value)} className="w-full rounded-lg border border-ink-700 bg-ink-950 px-2 h-9 text-[12px] text-slate-300">{["English (US)", "English (UK)", "Arabic"].map((o) => <option key={o}>{o}</option>)}</select></div>
             </div>
-            <div><label className="block text-[10px] text-slate-500 mb-1">Word Count</label><select value={wc} onChange={(e) => setWc(e.target.value)} className="w-full rounded-lg border border-ink-700 bg-ink-950 px-2 h-9 text-[12px] text-slate-300">{["500 - 1000 words", "1000 - 1500 words", "1500 - 2000 words", "2000 - 3000 words"].map((o) => <option key={o}>{o}</option>)}</select></div>
+            <div><label className="block text-[10px] text-slate-500 mb-1">Word Count</label><select value={wc} onChange={(e) => setWc(e.target.value)} className="w-full rounded-lg border border-ink-700 bg-ink-950 px-2 h-9 text-[12px] text-slate-300">{["1000 - 1500 words", "1500 - 2000 words", "2000 - 3000 words", "2500 - 3500 words", "3500 - 5000 words"].map((o) => <option key={o}>{o}</option>)}</select></div>
             <button onClick={generate} disabled={busy === "gen"} className="w-full inline-flex items-center justify-center gap-1.5 h-10 rounded-lg bg-gradient-to-r from-brand-500 to-violet-600 text-white text-sm font-semibold disabled:opacity-60">{busy === "gen" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />} Generate Content</button>
             <p className="text-[9px] text-slate-600 text-center">Real Claude generation → creates an editable draft.</p>
           </div>
@@ -1126,7 +1146,7 @@ function AIWritingTab() {
 
         <FadeUp delay={0.05}><Card title="Recent AI Drafts" right={<ViewAll label="View All Drafts" />}>
           <ul className="space-y-1.5">{dash.recentDrafts.map((dft) => (
-            <li key={dft.id} className={`group flex items-center gap-2 rounded-lg border px-2.5 py-2 cursor-pointer ${draft?.id === dft.id ? "border-brand-500/50 bg-brand-500/5" : "border-ink-800 bg-ink-950/40 hover:border-ink-700"}`} onClick={() => openDraft(dft.id)}>
+            <li key={dft.id} className={`group flex items-center gap-2 rounded-lg border px-2.5 py-2 cursor-pointer ${draft?.id === dft.id ? "border-brand-500/50 bg-brand-500/5" : "border-ink-800 bg-ink-950/40 hover:border-ink-700"}`} onClick={() => openReview(dft.id)}>
               <FileText className="w-3.5 h-3.5 text-slate-500 shrink-0" />
               <div className="min-w-0 flex-1"><div className="text-[11px] font-semibold text-white truncate">{dft.title}</div><div className="text-[9px] text-slate-600">{dft.words.toLocaleString()} words</div></div>
               <span className="w-6 h-6 rounded-full border border-emerald-500/30 text-emerald-300 text-[9px] font-bold grid place-items-center shrink-0">{dft.score}</span>
@@ -1192,6 +1212,77 @@ function AIWritingTab() {
         <FadeUp delay={0.12}><Card title="Optimization Tips"><ul className="space-y-1.5">{dash.optimizationTips.map((t, i) => <li key={i} className="flex items-center gap-1.5 text-[11px] text-slate-300"><Lightbulb className={`w-3 h-3 shrink-0 ${t.recommended ? "text-amber-400" : "text-slate-600"}`} /><span>{t.tip}{t.recommended && <span className="text-[8px] text-amber-400 ml-1">(recommended)</span>}</span></li>)}</ul></Card></FadeUp>
         <FadeUp delay={0.16}><Card title="AI Credits Usage"><div className="flex items-center gap-2"><Coins className="w-4 h-4 text-brand-400" /><span className="text-xl font-extrabold text-white">{dash.credits.used.toLocaleString()}</span><span className="text-[11px] text-slate-500">/ {dash.credits.total.toLocaleString()}</span></div><div className="h-2 rounded-full bg-ink-800 overflow-hidden mt-2"><motion.div className="h-full bg-gradient-to-r from-brand-500 to-violet-500" initial={{ width: 0 }} animate={{ width: `${(dash.credits.used / dash.credits.total) * 100}%` }} transition={{ duration: 0.8 }} /></div><div className="text-[9px] text-slate-600 mt-1">{dash.credits.resetLabel} · ~50 credits / generation (est.)</div></Card></FadeUp>
       </div>
+
+      {review && (
+        <DraftReview
+          draft={review}
+          busy={reviewBusy}
+          onApprove={approveReview}
+          onReject={rejectReview}
+          onEdit={() => { const id = review.id; setReview(null); openDraft(id); }}
+          onClose={() => setReview(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+// Full-article review drawer — the complete draft (cover, scores, rendered
+// body) with real Approve & Publish / Reject & Delete actions.
+function DraftReview({ draft, busy, onApprove, onReject, onEdit, onClose }: { draft: WritingDraft; busy: string; onApprove: () => void; onReject: () => void; onEdit: () => void; onClose: () => void }) {
+  const published = draft.status === "Published";
+  const sc = draft.score;
+  const subs: [string, number][] = [["SEO", sc.seo], ["Readability", sc.readability], ["Structure", sc.structure], ["Engagement", sc.engagement], ["Originality", sc.originality]];
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end bg-black/50" onClick={onClose}>
+      <motion.div initial={{ x: 560 }} animate={{ x: 0 }} transition={{ type: "spring", damping: 26, stiffness: 240 }} onClick={(e) => e.stopPropagation()} className="w-full max-w-xl h-full bg-ink-900 border-l border-ink-800 flex flex-col">
+        <div className="h-14 px-4 flex items-center gap-2 border-b border-ink-800 shrink-0">
+          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${WSTATUS_TONE[draft.status] || "bg-slate-500/15 text-slate-400"}`}>{draft.status}</span>
+          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300">Score {sc.overall}/100</span>
+          <span className="text-[10px] text-slate-500">{draft.words.toLocaleString()} words · {draft.category}</span>
+          <button onClick={onClose} className="ml-auto w-8 h-8 grid place-items-center rounded-lg text-slate-400 hover:bg-ink-800"><X className="w-4 h-4" /></button>
+        </div>
+        <div className="flex-1 overflow-y-auto scrollbar-thin">
+          {draft.coverImageUrl && <img src={draft.coverImageUrl} alt="" className="w-full h-44 object-cover" />}
+          <div className="p-4 space-y-4">
+            <div>
+              <h3 className="text-lg font-bold text-white leading-snug">{draft.title}</h3>
+              {draft.excerpt && <p className="text-[12px] text-slate-400 mt-1 leading-relaxed">{draft.excerpt}</p>}
+              <div className="mt-1.5 text-[10px] text-slate-600">/en/blog/{draft.slug} · tone: {draft.tone || "—"} · audience: {draft.audience || "—"}</div>
+            </div>
+            <div className="grid grid-cols-5 gap-1.5">
+              {subs.map(([l, v]) => (
+                <div key={l} className="rounded-lg border border-ink-800 bg-ink-950/40 px-1.5 py-1.5 text-center"><div className={`text-[13px] font-extrabold ${v >= 80 ? "text-emerald-300" : v >= 60 ? "text-amber-300" : "text-rose-300"}`}>{v}</div><div className="text-[8px] text-slate-500">{l}</div></div>
+              ))}
+            </div>
+            {draft.tags?.length > 0 && <div className="flex flex-wrap gap-1">{draft.tags.map((t) => <span key={t} className="text-[9px] px-1.5 py-0.5 rounded bg-ink-800 text-slate-400">#{t}</span>)}</div>}
+            <div className="rounded-xl border border-ink-800 bg-ink-950/40 p-4">
+              <div className="text-[10px] font-bold uppercase tracking-wide text-slate-500 mb-2">Full article</div>
+              <div
+                className="text-[13px] leading-relaxed text-slate-300 space-y-2 [&_h2]:text-white [&_h2]:font-bold [&_h2]:text-[15px] [&_h2]:mt-4 [&_h3]:text-white [&_h3]:font-semibold [&_h3]:text-[13px] [&_h3]:mt-3 [&_p]:mt-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:mt-1 [&_a]:text-brand-300 [&_a]:underline [&_table]:w-full [&_table]:text-[11px] [&_th]:text-left [&_th]:text-slate-400 [&_td]:py-1 [&_blockquote]:border-l-2 [&_blockquote]:border-brand-500/40 [&_blockquote]:pl-3 [&_blockquote]:text-slate-400"
+                dangerouslySetInnerHTML={{ __html: draft.body }}
+              />
+            </div>
+          </div>
+        </div>
+        <div className="p-3 border-t border-ink-800 shrink-0 space-y-2">
+          {published && draft.url ? (
+            <a href={draft.url} target="_blank" rel="noreferrer" className="w-full inline-flex items-center justify-center gap-2 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 text-white text-sm font-bold"><Globe className="w-4 h-4" /> Published — view it live</a>
+          ) : (
+            <button onClick={onApprove} disabled={!!busy} className="w-full inline-flex items-center justify-center gap-2 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 text-white text-sm font-bold disabled:opacity-50">
+              {busy === "pub" ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />} Approve &amp; Publish
+            </button>
+          )}
+          <div className="grid grid-cols-2 gap-2">
+            <button onClick={onEdit} className="inline-flex items-center justify-center gap-1.5 py-2 rounded-lg border border-ink-700 text-slate-300 text-[11px] font-semibold hover:bg-ink-800"><PenLine className="w-3.5 h-3.5" /> Open in Editor</button>
+            {!published && (
+              <button onClick={onReject} disabled={!!busy} className="inline-flex items-center justify-center gap-1.5 py-2 rounded-lg border border-rose-500/30 text-rose-300 text-[11px] font-semibold hover:bg-rose-500/10 disabled:opacity-50">
+                {busy === "del" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />} Reject &amp; Delete
+              </button>
+            )}
+          </div>
+        </div>
+      </motion.div>
     </div>
   );
 }

@@ -13,6 +13,7 @@ import { FadeUp, motion } from "@/components/motion";
 import { AGENTS, type AgentDef } from "@/lib/agents";
 import {
   fetchMe, getStoredUser, getWorkforce, getTeam, agentChat, getCeoOrchestration,
+  chatHistoryApi, chatSendApi, chatActApi, type ChatMsg, type ChatCard,
   listAnnouncements, getAnnouncement, getAnnouncementStats, createAnnouncement, updateAnnouncement, deleteAnnouncement,
   getWorkflows,
   getAlertStats, listAlerts, getAlertById, alertAction,
@@ -36,7 +37,15 @@ const nameFor = (id: string) => AGENTS.find((x) => x.id === id)?.name || id;
 const TABS = ["Team Inbox", "Agent Conversations", "Announcements", "Workflow Updates", "System Alerts", "Message Templates"] as const;
 type Tab = (typeof TABS)[number];
 
-type Msg = { id: number; role: "founder" | "agent"; agentId?: string; name?: string; text: string; ts: number; image?: string };
+type Msg = {
+  id: number; role: "founder" | "agent"; agentId?: string; name?: string; text: string; ts: number; image?: string;
+  // Persisted task-card fields (from the chat/send + chat/act endpoints).
+  sid?: string; card?: ChatCard | null; actionStatus?: string; actionResult?: string;
+};
+const fromServer = (m: ChatMsg, id: number): Msg => ({
+  id, sid: m.id, role: m.role, agentId: m.agentId || undefined, name: m.name || undefined,
+  text: m.text, ts: new Date(m.createdAt).getTime(), card: m.card, actionStatus: m.actionStatus, actionResult: m.actionResult,
+});
 type ImgAtt = { base64: string; type: string; preview: string };
 
 // Downscale an image to ≤1280px JPEG so it fits the API limit.
@@ -50,6 +59,99 @@ async function fileToImg(file: File): Promise<ImgAtt> {
   c.getContext("2d")!.drawImage(im, 0, 0, c.width, c.height);
   const out = c.toDataURL("image/jpeg", 0.85);
   return { base64: out.split(",")[1] || "", type: "image/jpeg", preview: out };
+}
+
+// Post-style task card an agent drops into the chat — the deliverable itself
+// (blog preview, SEO-fix plan, distribution plan, provider list) with REAL
+// Approve/Reject buttons. The decision + execution result render in place.
+function TaskCard({ msg, busy, onAct }: { msg: Msg; busy: boolean; onAct: (d: "approve" | "reject") => void }) {
+  const c = msg.card!;
+  const pending = msg.actionStatus === "pending";
+  const approved = msg.actionStatus === "approved";
+  const rejected = msg.actionStatus === "rejected";
+  return (
+    <div className="rounded-2xl rounded-tl-md border border-ink-700 bg-ink-950/70 overflow-hidden max-w-lg">
+      {msg.text && <div className="px-3.5 pt-2.5 text-[13px] text-slate-200 leading-relaxed">{msg.text}</div>}
+      {c.image && <img src={c.image} alt="" className="w-full h-40 object-cover mt-2.5" />}
+      <div className="p-3.5 space-y-2.5">
+        <div>
+          <div className="text-[14px] font-bold text-white leading-snug">{c.title}</div>
+          {c.subtitle && <div className="text-[10px] text-slate-500 mt-0.5">{c.subtitle}</div>}
+        </div>
+        {c.body && <p className="text-[12px] text-slate-300 leading-relaxed">{c.body}{c.body.length >= 200 ? "…" : ""}</p>}
+        {c.why && (
+          <div className="rounded-lg border border-amber-500/15 bg-amber-500/5 px-2.5 py-2">
+            <div className="text-[9px] font-bold uppercase tracking-wide text-amber-300/90 mb-0.5">Why this matters</div>
+            <p className="text-[11px] text-slate-300 leading-relaxed">{c.why}</p>
+          </div>
+        )}
+        {c.plan && c.plan.length > 0 && !approved && (
+          <div className="rounded-lg border border-brand-500/15 bg-brand-500/5 px-2.5 py-2">
+            <div className="text-[9px] font-bold uppercase tracking-wide text-brand-300/90 mb-1">What I&apos;ll do</div>
+            <ol className="space-y-1">
+              {c.plan.map((s, i) => (
+                <li key={i} className="flex items-start gap-1.5 text-[11px] text-slate-300 leading-snug">
+                  <span className="shrink-0 w-3.5 h-3.5 rounded-full bg-brand-500/20 text-brand-300 grid place-items-center text-[8px] font-bold mt-0.5">{i + 1}</span>
+                  {s}
+                </li>
+              ))}
+            </ol>
+          </div>
+        )}
+        {c.fields && c.fields.length > 0 && (
+          <div className="grid grid-cols-2 gap-1.5">
+            {c.fields.map((f) => (
+              <div key={f.label} className="rounded-lg border border-ink-800 bg-ink-900/50 px-2 py-1.5"><div className="text-[9px] text-slate-500">{f.label}</div><div className="text-[11px] text-slate-200 truncate">{f.value}</div></div>
+            ))}
+          </div>
+        )}
+        {c.items && c.items.length > 0 && (
+          <ul className="space-y-1.5">
+            {c.items.map((it) => (
+              <li key={it.id} className="flex items-center gap-2 rounded-lg border border-ink-800 bg-ink-900/50 px-2.5 py-2">
+                <UserCheck className="w-3.5 h-3.5 text-brand-300 shrink-0" />
+                <div className="min-w-0"><div className="text-[12px] text-slate-200 font-medium truncate">{it.label}</div><div className="text-[9px] text-slate-500 truncate">{it.sub}</div></div>
+              </li>
+            ))}
+          </ul>
+        )}
+        {c.fix && c.fix.changes?.length > 0 && (
+          <div className="space-y-1.5">
+            {c.fix.changes.map((ch, i) => (
+              <div key={i} className="space-y-1">
+                <div className="rounded-lg border border-rose-500/20 bg-rose-500/5 px-2.5 py-1.5"><div className="text-[8px] font-bold uppercase text-rose-300/80">Before · {ch.field}</div><div className="text-[11px] text-slate-300 break-words">{ch.before || <span className="italic text-slate-600">(empty)</span>}</div></div>
+                <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-2.5 py-1.5"><div className="text-[8px] font-bold uppercase text-emerald-300/80">After</div><div className="text-[11px] text-slate-200 break-words">{ch.after}</div></div>
+              </div>
+            ))}
+          </div>
+        )}
+        {c.links && c.links.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {c.links.map((l) => (
+              <a key={l.label} href={l.url} target={l.url.startsWith("http") ? "_blank" : undefined} rel="noreferrer" className="inline-flex items-center gap-1 px-2 h-7 rounded-lg border border-ink-700 text-[11px] font-semibold text-brand-300 hover:bg-ink-800">
+                <Globe className="w-3 h-3" /> {l.label}
+              </a>
+            ))}
+          </div>
+        )}
+        {(approved || rejected) && (
+          <div className={`rounded-lg px-2.5 py-2 text-[11px] leading-relaxed border ${approved ? "border-emerald-500/20 bg-emerald-500/5 text-emerald-200" : "border-rose-500/20 bg-rose-500/5 text-rose-200"}`}>
+            <span className="font-bold">{approved ? "✓ Approved" : "✕ Rejected"}</span>{msg.actionResult ? ` — ${msg.actionResult}` : ""}
+          </div>
+        )}
+        {pending && (
+          <div className="flex gap-2 pt-0.5">
+            <button onClick={() => onAct("approve")} disabled={busy} className="flex-1 inline-flex items-center justify-center gap-1.5 h-9 rounded-lg bg-gradient-to-r from-emerald-500 to-teal-600 text-white text-[12px] font-bold disabled:opacity-50">
+              {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />} {c.approveLabel || "Approve"}
+            </button>
+            <button onClick={() => onAct("reject")} disabled={busy} className="inline-flex items-center justify-center gap-1.5 px-4 h-9 rounded-lg border border-rose-500/30 text-rose-300 text-[12px] font-bold hover:bg-rose-500/10 disabled:opacity-50">
+              <X className="w-3.5 h-3.5" /> {c.rejectLabel || "Reject"}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function ChatInput({ members, busy, mentionId, setMentionId, onSend, statusOf, placeholder, seed }: {
@@ -201,6 +303,13 @@ function GroupChat({ wf }: { wf: Workforce | null; group: boolean }) {
     if (p) { sessionStorage.removeItem("comm-prefill"); setSeed({ text: p, key: "k" + MID++ }); }
   }, []);
 
+  // Persisted history — the group chat (and each DM) survives reloads.
+  useEffect(() => {
+    let off = false;
+    chatHistoryApi(to || "all").then((r) => { if (!off) setMsgs(r.messages.map((m, i) => fromServer(m, MID++ + i))); }).catch(() => {});
+    return () => { off = true; };
+  }, [to]);
+
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [msgs, busy]);
 
   const members = AGENTS;
@@ -216,13 +325,28 @@ function GroupChat({ wf }: { wf: Workforce | null; group: boolean }) {
     setBusy(true);
     try {
       const history: AgentChatTurn[] = msgs.slice(-10).map((m) => ({ role: m.role, name: m.name, text: m.text }));
-      const r = await agentChat(t || "Analyze this image.", { history, mentionId: mention, imageBase64: img?.base64, imageType: img?.type });
-      setMsgs((m) => [...m, { id: MID++, role: "agent", agentId: r.agentId, name: r.agentName, text: r.text, ts: Date.now() }]);
+      const r = await chatSendApi(t || "Analyze this image.", { history, mentionId: mention, imageBase64: img?.base64, imageType: img?.type });
+      setMsgs((m) => [...m, ...r.messages.map((sm) => fromServer(sm, MID++))]);
     } catch {
-      setMsgs((m) => [...m, { id: MID++, role: "agent", agentId: "ceo", name: "AI CEO / Orchestrator", text: "Couldn't reach the team right now — check the LLM key/quota.", ts: Date.now() }]);
+      setMsgs((m) => [...m, { id: MID++, role: "agent", agentId: "ceo", name: "AI CEO / Orchestrator", text: "Couldn't reach the team right now — check the backend.", ts: Date.now() }]);
     } finally { setBusy(false); }
   };
   const react = (mid: number, e: string) => setReacts((r) => ({ ...r, [mid]: { ...(r[mid] || {}), [e]: (r[mid]?.[e] || 0) + 1 } }));
+
+  // Approve / Reject a task card — runs the REAL backend action, then swaps in
+  // the decided card (with its result / diff / live links).
+  const [actBusy, setActBusy] = useState<string | null>(null);
+  const act = async (m: Msg, decision: "approve" | "reject") => {
+    if (!m.sid || actBusy) return;
+    setActBusy(m.sid);
+    try {
+      const r = await chatActApi(m.sid, decision);
+      if (r.ok && r.msg) setMsgs((all) => all.map((x) => (x.sid === m.sid ? { ...x, card: r.msg!.card, actionStatus: r.msg!.actionStatus, actionResult: r.msg!.actionResult } : x)));
+      else if (!r.ok) setMsgs((all) => [...all, { id: MID++, role: "agent", agentId: m.agentId, name: m.name, text: `⚠ ${r.message || "Action failed."}`, ts: Date.now() }]);
+    } catch {
+      setMsgs((all) => [...all, { id: MID++, role: "agent", agentId: "ceo", name: "AI CEO / Orchestrator", text: "⚠ Couldn't execute the action — check the backend.", ts: Date.now() }]);
+    } finally { setActBusy(null); }
+  };
 
   const convList = members.filter((a) => convTab === "All" || (convTab === "Unread" && statusOf(a.id) === "Active") || (convTab === "Mentions" && false));
   const selName = to ? nameFor(to) : "AI Workforce";
@@ -296,7 +420,11 @@ function GroupChat({ wf }: { wf: Workforce | null; group: boolean }) {
                 <span className="w-8 h-8 rounded-lg bg-brand-600/15 text-brand-300 grid place-items-center shrink-0 mt-0.5"><Icon className="w-4 h-4" /></span>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 mb-0.5"><span className="text-[11px] font-bold text-white">{m.name}</span><span className="text-[9px] text-slate-600">{time}</span>{m.agentId === "ceo" && <span className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-brand-500/15 text-brand-300">BROADCAST</span>}</div>
-                  <div className="rounded-2xl rounded-tl-md bg-ink-800 text-slate-200 px-3.5 py-2.5 text-[13px] leading-relaxed whitespace-pre-wrap">{m.text}</div>
+                  {m.card ? (
+                    <TaskCard msg={m} busy={actBusy === m.sid} onAct={(d) => act(m, d)} />
+                  ) : (
+                    <div className="rounded-2xl rounded-tl-md bg-ink-800 text-slate-200 px-3.5 py-2.5 text-[13px] leading-relaxed whitespace-pre-wrap">{m.text}</div>
+                  )}
                   <div className="flex items-center gap-1 mt-1.5">
                     {REACTIONS.map((e) => (
                       <button key={e} onClick={() => react(m.id, e)} className={`inline-flex items-center gap-1 px-1.5 h-6 rounded-full text-[11px] border ${rx[e] ? "border-brand-500/40 bg-brand-500/10 text-brand-200" : "border-ink-800 text-slate-500 hover:border-ink-700"}`}>{e}{rx[e] ? <span className="text-[10px]">{rx[e]}</span> : null}</button>

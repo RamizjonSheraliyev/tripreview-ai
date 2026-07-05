@@ -33,7 +33,7 @@ const GROUPS: NavGroup[] = [
       { label: "Sales Agent", icon: Briefcase, href: "/agents/sales", dot: true },
       { label: "Provider Onboarding", icon: UserCheck, href: "/agents/onboarding", dot: true },
       { label: "Marketplace Growth", icon: Network, href: "/agents/marketplace", dot: true },
-      { label: "Content Distribution", icon: Share2 },
+      { label: "Content Distribution", icon: Share2, href: "/agents/distribution", dot: true },
       { label: "Competitive Intelligence", icon: Radar, href: "/agents/competitive", dot: true },
     ],
   },

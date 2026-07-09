@@ -22,6 +22,8 @@ import {
   type WritingDashboard, type WritingDraft,
 } from "@/lib/api";
 
+// Public site origin for "Live on site" links — real domain in prod, not localhost.
+const PUBLIC_SITE = (process.env.NEXT_PUBLIC_SITE_URL || "https://tripreview.ae").replace(/\/+$/, "");
 const kfmt = (n: number) => n >= 1000000 ? `${(n / 1000000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(1)}K` : String(n);
 const scoreTone = (s: number) => s >= 90 ? "text-emerald-300 border-emerald-500/40" : s >= 70 ? "text-sky-300 border-sky-500/40" : s >= 50 ? "text-amber-300 border-amber-500/40" : "text-rose-300 border-rose-500/40";
 function Trend({ n, unit = "vs Apr 13 – Apr 20" }: { n: number; unit?: string }) {
@@ -1185,7 +1187,7 @@ function AIWritingTab() {
                 <button onClick={publish} disabled={!!busy || draft.status === "Published"} className="inline-flex items-center gap-1 text-[11px] px-3 h-8 rounded-lg bg-gradient-to-r from-emerald-500 to-emerald-600 text-white font-semibold disabled:opacity-50">{busy === "pub" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Globe className="w-3.5 h-3.5" />} {draft.status === "Published" ? "Published" : "Publish"}</button>
               </div>
             </div>
-            {draft.status === "Published" && draft.url && <a href={`http://localhost:3000${draft.url}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 mt-1.5 text-[10px] text-emerald-400 hover:underline"><Globe className="w-3 h-3" /> Live on site: {draft.url}</a>}
+            {draft.status === "Published" && draft.url && <a href={`${PUBLIC_SITE}${draft.url}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 mt-1.5 text-[10px] text-emerald-400 hover:underline"><Globe className="w-3 h-3" /> Live on site: {draft.url}</a>}
           </>}
         </Card></FadeUp>
 
@@ -1267,7 +1269,7 @@ function DraftReview({ draft, busy, onApprove, onReject, onEdit, onClose }: { dr
         </div>
         <div className="p-3 border-t border-ink-800 shrink-0 space-y-2">
           {published && draft.url ? (
-            <a href={draft.url} target="_blank" rel="noreferrer" className="w-full inline-flex items-center justify-center gap-2 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 text-white text-sm font-bold"><Globe className="w-4 h-4" /> Published — view it live</a>
+            <a href={`${PUBLIC_SITE}${draft.url}`} target="_blank" rel="noreferrer" className="w-full inline-flex items-center justify-center gap-2 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 text-white text-sm font-bold"><Globe className="w-4 h-4" /> Published — view it live</a>
           ) : (
             <button onClick={onApprove} disabled={!!busy} className="w-full inline-flex items-center justify-center gap-2 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 text-white text-sm font-bold disabled:opacity-50">
               {busy === "pub" ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />} Approve &amp; Publish

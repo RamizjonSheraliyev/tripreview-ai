@@ -718,6 +718,7 @@ export function createTask(input: TaskInput) { return request<{ ok: boolean; tas
 export function updateTask(id: string, patch: TaskInput) { return request<{ ok: boolean; task: TaskFull }>(`/admin/tasks/${id}`, { method: "PATCH", body: JSON.stringify(patch) }); }
 export function deleteTask(id: string) { return request<{ ok: boolean }>(`/admin/tasks/${id}`, { method: "DELETE" }); }
 export function completeTask(id: string) { return request<{ ok: boolean; task: TaskFull }>(`/admin/tasks/${id}/complete`, { method: "POST" }); }
+export function generateTaskBrief(id: string) { return request<{ ok: boolean; message?: string; task: TaskFull }>(`/admin/tasks/${id}/brief`, { method: "POST" }); }
 export function toggleChecklistItem(id: string, itemId: string) { return request<{ ok: boolean; task: TaskFull }>(`/admin/tasks/${id}/checklist/${itemId}/toggle`, { method: "POST" }); }
 export function addChecklistItem(id: string, label: string) { return request<{ ok: boolean; task: TaskFull }>(`/admin/tasks/${id}/checklist`, { method: "POST", body: JSON.stringify({ label }) }); }
 export function addTaskComment(id: string, text: string, author?: string) { return request<{ ok: boolean; task: TaskFull }>(`/admin/tasks/${id}/comment`, { method: "POST", body: JSON.stringify({ text, author }) }); }
@@ -1383,6 +1384,8 @@ export function getUnclaimedProfiles(params: { q?: string; category?: string; lo
 export function mktDelete(ids: string[]) { return request<{ ok: boolean; message?: string; count?: number }>("/admin/agents/marketplace/delete", { method: "POST", body: JSON.stringify({ ids }) }); }
 export function mktToOnboarding(ids: string[]) { return request<{ ok: boolean; message?: string }>("/admin/agents/marketplace/to-onboarding", { method: "POST", body: JSON.stringify({ ids }) }); }
 export function mktEnrich(id: string) { return request<{ ok: boolean; message?: string }>(`/admin/agents/marketplace/providers/${id}/enrich`, { method: "POST" }); }
+// Full web enrichment for many providers at once (logo + description + real web reviews + trust score).
+export function mktEnrichAll(limit = 12) { return request<{ ok: boolean; message?: string; results?: { ok: boolean; added?: number }[] }>(`/admin/agents/marketplace/providers/enrich-all`, { method: "POST", body: JSON.stringify({ limit }) }); }
 
 export type FunnelGroupRow = { name: string; created: number; published: number; viewed: number; claimed: number; verified: number; subscriber: number; claimRate: number; color: string };
 export type ClaimFunnelData = {
@@ -1775,3 +1778,33 @@ export type CrmData = {
   selectedId: string;
 };
 export function getCRM(contact = "") { return request<CrmData>(`/admin/agents/sales/crm${contact ? `?contact=${contact}` : ""}`); }
+
+// ---- Backlink Builder Agent ----
+export type BlRow = {
+  id: string; sourceDomain: string; sourceUrl: string; targetPath: string; anchor: string;
+  type: "dofollow" | "nofollow" | "unknown"; status: "Opportunity" | "Submitted" | "Live" | "Rejected" | "Lost";
+  method: string; category: string; da: number; relevance: number; contactEmail: string;
+  outreachDraft: string; notes: string; discoveredVia: string;
+  submittedAt: string | null; verifiedAt: string | null; lastCheckedAt: string | null; createdAt: string; updatedAt: string;
+};
+export type BlOverview = {
+  kpis: { total: number; live: number; dofollow: number; pending: number; opportunities: number; avgDomainAuthority: number };
+  byStatus: { label: string; count: number }[];
+  byMethod: { label: string; count: number }[];
+  byCategory: { label: string; count: number }[];
+  recent: { id: string; sourceDomain: string; targetPath: string; status: string; type: string; method: string; da: number; at: string }[];
+  channels: { key: string; label: string; connected: boolean; hint: string }[];
+  ai: boolean;
+};
+export type BlList = { rows: BlRow[]; total: number; page: number; perPage: number; pages: number; statuses: string[]; methods: string[] };
+
+export function getBacklinkOverview() { return request<BlOverview>("/admin/agents/backlink/overview"); }
+export function getBacklinks(params: { status?: string; type?: string; method?: string; category?: string; q?: string; page?: number } = {}) { const s = new URLSearchParams(params as Record<string, string>).toString(); return request<BlList>(`/admin/agents/backlink/list${s ? `?${s}` : ""}`); }
+export function backlinkDiscover(body: { category?: string; count?: number }) { return request<{ ok: boolean; message?: string; created?: { id: string; domain: string }[] }>("/admin/agents/backlink/discover", { method: "POST", body: JSON.stringify(body) }); }
+export function backlinkAdd(body: Record<string, unknown>) { return request<{ ok: boolean; message?: string; backlink?: BlRow }>("/admin/agents/backlink", { method: "POST", body: JSON.stringify(body) }); }
+export function backlinkVerify(id: string) { return request<{ ok: boolean; found?: boolean; message?: string; backlink?: BlRow }>(`/admin/agents/backlink/${id}/verify`, { method: "POST" }); }
+export function backlinkVerifyAll() { return request<{ ok: boolean; message?: string; checked?: number; live?: number; lost?: number }>("/admin/agents/backlink/verify-all", { method: "POST" }); }
+export function backlinkOutreach(id: string) { return request<{ ok: boolean; message?: string; draft?: string; backlink?: BlRow }>(`/admin/agents/backlink/${id}/outreach`, { method: "POST" }); }
+export function backlinkSubmit(id: string) { return request<{ ok: boolean; message?: string; backlink?: BlRow }>(`/admin/agents/backlink/${id}/submit`, { method: "POST" }); }
+export function backlinkUpdate(id: string, patch: Record<string, unknown>) { return request<{ ok: boolean; backlink?: BlRow }>(`/admin/agents/backlink/${id}`, { method: "PATCH", body: JSON.stringify(patch) }); }
+export function backlinkDelete(id: string) { return request<{ ok: boolean }>(`/admin/agents/backlink/${id}`, { method: "DELETE" }); }

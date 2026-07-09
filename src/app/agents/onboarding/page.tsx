@@ -43,7 +43,14 @@ function Gauge({ value, label }: { value: number; label: string }) {
   return <div className="relative w-[150px] h-[88px]"><svg viewBox="0 0 130 74" className="w-full h-full"><path d="M9 70 A56 56 0 0 1 121 70" fill="none" stroke="#1e293b" strokeWidth="11" strokeLinecap="round" /><motion.path d="M9 70 A56 56 0 0 1 121 70" fill="none" stroke={color} strokeWidth="11" strokeLinecap="round" initial={{ strokeDasharray: `0 ${C}` }} animate={{ strokeDasharray: `${len} ${C}` }} transition={{ duration: 0.9, ease: "easeOut" }} /></svg><div className="absolute inset-x-0 bottom-0 text-center"><AnimatedNumber value={value} className="text-3xl font-extrabold text-white" /><div className="text-[10px] font-semibold" style={{ color }}>{label}</div></div></div>;
 }
 function ScoreDot({ s }: { s: number }) { return <span className={`relative w-8 h-8 inline-grid place-items-center rounded-full border text-[11px] font-bold ${s >= 80 ? "border-emerald-500/40 text-emerald-300" : s >= 60 ? "border-sky-500/40 text-sky-300" : s >= 40 ? "border-amber-500/40 text-amber-300" : "border-rose-500/40 text-rose-300"}`}>{s >= 90 && <span className="absolute inset-0 rounded-full border border-emerald-400/60 animate-ping" />}{s}</span>; }
-function Logo({ url, name }: { url?: string; name: string }) { return url ? <img src={url} alt={name} className="w-9 h-9 rounded-lg object-cover bg-white/5 border border-ink-800 shrink-0" /> : <span className="w-9 h-9 rounded-lg bg-gradient-to-br from-brand-500 to-violet-600 grid place-items-center text-[10px] font-bold text-white shrink-0">{(name || "?").split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase()}</span>; }
+function Logo({ url, name }: { url?: string; name: string }) {
+  const [err, setErr] = useState(false);
+  const initials = (name || "?").split(" ").filter(Boolean).map((w) => w[0]).join("").slice(0, 2).toUpperCase() || "?";
+  // Show the real logo when it loads; on a broken/404 URL (common for niche
+  // Clearbit domains) fall back to clean initials — never a broken image.
+  if (url && !err) return <img src={url} alt={name} onError={() => setErr(true)} className="w-9 h-9 rounded-lg object-cover bg-white border border-ink-800 shrink-0" />;
+  return <span className="w-9 h-9 rounded-lg bg-gradient-to-br from-brand-500 to-violet-600 grid place-items-center text-[10px] font-bold text-white shrink-0">{initials}</span>;
+}
 const TONE: Record<string, string> = {
   Verified: "bg-emerald-500/15 text-emerald-300", Active: "bg-emerald-500/15 text-emerald-300", "Closed Won": "bg-emerald-500/15 text-emerald-300",
   "In Review": "bg-sky-500/15 text-sky-300", Reviewing: "bg-sky-500/15 text-sky-300", Pending: "bg-amber-500/15 text-amber-300", "New Request": "bg-amber-500/15 text-amber-300",

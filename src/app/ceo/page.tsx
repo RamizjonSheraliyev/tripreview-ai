@@ -18,7 +18,7 @@ import {
   fetchMe, getStoredUser, getStats, getActivity, getSeries, getBrainTasks, approveBrainTask, dismissBrainTask,
   getCeoOverview, ceoAsk, getCeoOrchestration, executeCeoTask, taskChat, getCeoCompletedFixes,
   getCeoAudit, runCeoAudit, approveCeoProposal, rejectCeoProposal,
-  getCeoSeo, runCeoSeo, getWorkforce, getRoi, getStrategy, generateStrategy, assignAgentTask, toggleAgentPause, agentChat, generateLandingPage, listLandingPages, getLandingPageById, editLandingPageAI, publishLandingPage,
+  getCeoSeo, runCeoSeo, getWorkforce, getRoi, getStrategy, generateStrategy, assignAgentTask, toggleAgentPause, agentChat, generateLandingPage, listLandingPages, getLandingPageById, editLandingPageAI, publishLandingPage, createBrief,
   type GeneratedPage, type LandingPageFull, type RoiData, type StrategyData,
   type Workforce, type WfAgent, type WfApproval, type AgentChatTurn,
   type Stats, type Activity, type SeriesPoint, type BrainTask, type CeoOverview, type CeoOpportunity,
@@ -1130,9 +1130,9 @@ function FixDetails({ fix, onClose }: { fix: CompletedFix; onClose: () => void }
             </div>
           )}
         </div>
-        {fix.url && (
+        {(pagePath || fix.url) && (
           <div className="p-3 border-t border-ink-800 shrink-0">
-            <a href={fix.url} target="_blank" rel="noreferrer" className="w-full inline-flex items-center justify-center gap-2 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 text-white text-sm font-bold">
+            <a href={pagePath ? `${PUBLIC_SITE}${pagePath}` : fix.url} target="_blank" rel="noreferrer" className="w-full inline-flex items-center justify-center gap-2 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 text-white text-sm font-bold">
               <Globe className="w-4 h-4" /> View the fixed page <ArrowRight className="w-4 h-4" />
             </a>
             <p className="mt-1.5 text-center text-[10px] text-slate-500">Opens {pagePath || fix.url} — the change is live in the page&apos;s &lt;head&gt; within ~60s.</p>
@@ -2262,7 +2262,32 @@ function StrategyOpportunities() {
   const [note, setNote] = useState("");
   const [sel, setSel] = useState<OrchTask | null>(null);
   const [busyFix, setBusyFix] = useState(false);
+  const router = useRouter();
+  // Generic opportunity detail drawer for the 3 bottom cards (content /
+  // marketplace / competitive) — each row opens full detail + a real action.
+  const [oppSel, setOppSel] = useState<{ kind: "content" | "market" | "competitive"; title: string; meta: [string, string][]; keyword?: string; category?: string } | null>(null);
+  const [oppBusy, setOppBusy] = useState(false);
   useEffect(() => { setLoading(true); getStrategy().then(setData).catch(() => {}).finally(() => setLoading(false)); }, []);
+
+  const flashNote = (m: string) => { setNote(m); setTimeout(() => setNote(""), 6000); };
+  const runOppAction = async () => {
+    if (!oppSel) return;
+    setOppBusy(true);
+    try {
+      if (oppSel.kind === "content") {
+        const r = await createBrief({ title: oppSel.title, primaryKeyword: oppSel.keyword || oppSel.title, contentType: "Blog Post", priority: "High", category: oppSel.category || "Travel Guides" });
+        flashNote(r.ok ? `✓ Content brief created for “${oppSel.title}” → Copywriter Agent.` : "Could not create the brief.");
+      } else if (oppSel.kind === "competitive") {
+        const r = await generateLandingPage(oppSel.keyword || oppSel.title);
+        flashNote(r.ok && r.page ? `✓ Page created for “${oppSel.title}” — review & publish in Pages.` : "Could not create the page.");
+      } else {
+        router.push("/agents/marketplace");
+        return;
+      }
+      setOppSel(null);
+    } catch (e) { flashNote(e instanceof Error ? e.message : "Action failed."); }
+    finally { setOppBusy(false); }
+  };
 
   // Open an opportunity in the same rich drawer Task Orchestration uses —
   // full English reason + step-by-step plan + a working Approve & Auto-fix.
@@ -2403,10 +2428,10 @@ function StrategyOpportunities() {
             <div className="overflow-x-auto"><table className="w-full text-left min-w-[340px]">
               <thead><tr className="text-[9px] uppercase tracking-wide text-slate-600 border-b border-ink-800"><th className="py-1.5 font-semibold">Topic / Keyword</th><th className="font-semibold text-right">Volume</th><th className="font-semibold text-right">Traffic</th><th className="font-semibold">Priority</th><th className="font-semibold">Status</th></tr></thead>
               <tbody>{data.contentOpps.map((c, i) => (
-                <tr key={i} className="border-b border-ink-900"><td className="py-2 text-[11px] text-white font-semibold"><span className="block truncate max-w-[120px]">{c.topic}</span><span className="text-[9px] text-slate-600">{c.assignedTo}</span></td><td className="text-[10px] text-slate-300 text-right tabular-nums">{kfmt(c.searchVolume)}</td><td className="text-[10px] text-slate-400 text-right tabular-nums">{kfmt(c.potentialTraffic)}</td><td><span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${PRI_TONE[c.priority]}`}>{c.priority}</span></td><td><span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${STAT_TONE[c.status] || "bg-slate-500/15 text-slate-400"}`}>{c.status}</span></td></tr>
+                <tr key={i} onClick={() => setOppSel({ kind: "content", title: c.topic, keyword: c.keyword, category: "Travel Guides", meta: [["Keyword", c.keyword || "—"], ["Search Volume", `${kfmt(c.searchVolume)}/mo`], ["Traffic Potential", `${kfmt(c.potentialTraffic)}/mo`], ["Priority", c.priority], ["Assigned To", c.assignedTo], ["Status", c.status]] })} className="border-b border-ink-900 cursor-pointer hover:bg-ink-800/30"><td className="py-2 text-[11px] text-white font-semibold"><span className="block truncate max-w-[120px]">{c.topic}</span><span className="text-[9px] text-slate-600">{c.assignedTo}</span></td><td className="text-[10px] text-slate-300 text-right tabular-nums">{kfmt(c.searchVolume)}</td><td className="text-[10px] text-slate-400 text-right tabular-nums">{kfmt(c.potentialTraffic)}</td><td><span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${PRI_TONE[c.priority]}`}>{c.priority}</span></td><td><span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${STAT_TONE[c.status] || "bg-slate-500/15 text-slate-400"}`}>{c.status}</span></td></tr>
               ))}</tbody>
             </table></div>
-            <button className="mt-3 w-full text-center text-[11px] text-brand-400 font-semibold hover:underline inline-flex items-center justify-center gap-1">View All Content Opportunities <ArrowRight className="w-3 h-3" /></button>
+            <button onClick={() => router.push("/agents/copywriter")} className="mt-3 w-full text-center text-[11px] text-brand-400 font-semibold hover:underline inline-flex items-center justify-center gap-1">View All Content Opportunities <ArrowRight className="w-3 h-3" /></button>
           </Panel>
         </FadeUp>}
 
@@ -2415,10 +2440,10 @@ function StrategyOpportunities() {
             <div className="overflow-x-auto"><table className="w-full text-left min-w-[340px]">
               <thead><tr className="text-[9px] uppercase tracking-wide text-slate-600 border-b border-ink-800"><th className="py-1.5 font-semibold">Opportunity</th><th className="font-semibold text-right">Providers</th><th className="font-semibold text-right">Revenue</th><th className="font-semibold">Priority</th><th className="font-semibold">Status</th></tr></thead>
               <tbody>{data.marketplaceOpps.map((m, i) => (
-                <tr key={i} className="border-b border-ink-900"><td className="py-2 text-[11px] text-white font-semibold"><span className="block truncate max-w-[120px]">{m.opportunity}</span><span className="text-[9px] text-slate-600">{m.assignedTo}</span></td><td className="text-[10px] text-slate-300 text-right tabular-nums">{m.potentialProviders}</td><td className="text-[10px] text-white text-right tabular-nums font-semibold">{aedC(m.revenueImpact)}</td><td><span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${PRI_TONE[m.priority]}`}>{m.priority}</span></td><td><span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${STAT_TONE[m.status] || "bg-slate-500/15 text-slate-400"}`}>{m.status}</span></td></tr>
+                <tr key={i} onClick={() => setOppSel({ kind: "market", title: m.opportunity, meta: [["Potential Providers", String(m.potentialProviders)], ["Revenue Impact", aedC(m.revenueImpact)], ["Priority", m.priority], ["Assigned To", m.assignedTo], ["Status", m.status]] })} className="border-b border-ink-900 cursor-pointer hover:bg-ink-800/30"><td className="py-2 text-[11px] text-white font-semibold"><span className="block truncate max-w-[120px]">{m.opportunity}</span><span className="text-[9px] text-slate-600">{m.assignedTo}</span></td><td className="text-[10px] text-slate-300 text-right tabular-nums">{m.potentialProviders}</td><td className="text-[10px] text-white text-right tabular-nums font-semibold">{aedC(m.revenueImpact)}</td><td><span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${PRI_TONE[m.priority]}`}>{m.priority}</span></td><td><span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${STAT_TONE[m.status] || "bg-slate-500/15 text-slate-400"}`}>{m.status}</span></td></tr>
               ))}</tbody>
             </table></div>
-            <button className="mt-3 w-full text-center text-[11px] text-brand-400 font-semibold hover:underline inline-flex items-center justify-center gap-1">View All Marketplace Opportunities <ArrowRight className="w-3 h-3" /></button>
+            <button onClick={() => router.push("/agents/marketplace")} className="mt-3 w-full text-center text-[11px] text-brand-400 font-semibold hover:underline inline-flex items-center justify-center gap-1">View All Marketplace Opportunities <ArrowRight className="w-3 h-3" /></button>
           </Panel>
         </FadeUp>}
 
@@ -2427,10 +2452,10 @@ function StrategyOpportunities() {
             <div className="overflow-x-auto"><table className="w-full text-left min-w-[300px]">
               <thead><tr className="text-[9px] uppercase tracking-wide text-slate-600 border-b border-ink-800"><th className="py-1.5 font-semibold">Opportunity</th><th className="font-semibold">Gap</th><th className="font-semibold">Impact</th><th className="font-semibold">Action</th></tr></thead>
               <tbody>{data.competitiveOpps.map((c, i) => (
-                <tr key={i} className="border-b border-ink-900"><td className="py-2 text-[11px] text-white font-semibold"><span className="block truncate max-w-[120px]">{c.opportunity}</span></td><td className="text-[10px] text-slate-400">{c.competitorGap}</td><td><span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${IMP_TONE[c.impact]}`}>{c.impact}</span></td><td><span className="text-[10px] text-brand-300 font-semibold">{c.action}</span></td></tr>
+                <tr key={i} onClick={() => setOppSel({ kind: "competitive", title: c.opportunity, keyword: c.opportunity, meta: [["Competitor Gap", c.competitorGap], ["Impact", c.impact], ["Recommended Action", c.action]] })} className="border-b border-ink-900 cursor-pointer hover:bg-ink-800/30"><td className="py-2 text-[11px] text-white font-semibold"><span className="block truncate max-w-[120px]">{c.opportunity}</span></td><td className="text-[10px] text-slate-400">{c.competitorGap}</td><td><span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${IMP_TONE[c.impact]}`}>{c.impact}</span></td><td><span className="text-[10px] text-brand-300 font-semibold">{c.action}</span></td></tr>
               ))}</tbody>
             </table></div>
-            <button className="mt-3 w-full text-center text-[11px] text-brand-400 font-semibold hover:underline inline-flex items-center justify-center gap-1">View All Competitive Opportunities <ArrowRight className="w-3 h-3" /></button>
+            <button onClick={() => router.push("/agents/competitive")} className="mt-3 w-full text-center text-[11px] text-brand-400 font-semibold hover:underline inline-flex items-center justify-center gap-1">View All Competitive Opportunities <ArrowRight className="w-3 h-3" /></button>
           </Panel>
         </FadeUp>
       </div>
@@ -2459,6 +2484,41 @@ function StrategyOpportunities() {
       </div>
 
       {sel && <TaskDetails task={sel} busy={busyFix} onExec={() => execOpp(sel)} onClose={() => setSel(null)} />}
+
+      {oppSel && (
+        <div className="fixed inset-0 z-50 flex justify-end">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setOppSel(null)} />
+          <div className="relative w-full max-w-md h-full overflow-y-auto bg-ink-950 border-l border-ink-800 p-5 space-y-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-[10px] uppercase tracking-wide text-brand-300 font-bold">{oppSel.kind === "content" ? "Content Opportunity" : oppSel.kind === "market" ? "Marketplace Opportunity" : "Competitive Opportunity"}</div>
+                <h3 className="text-base font-bold text-white leading-snug">{oppSel.title}</h3>
+              </div>
+              <button onClick={() => setOppSel(null)} className="text-slate-500 hover:text-white shrink-0"><X className="w-4 h-4" /></button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              {oppSel.meta.map(([l, v]) => (
+                <div key={l} className="rounded-lg border border-ink-800 bg-ink-900/50 p-2"><div className="text-[10px] text-slate-500">{l}</div><div className="text-[12px] text-slate-200 font-semibold break-words">{v}</div></div>
+              ))}
+            </div>
+
+            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
+              <div className="text-[11px] font-bold text-amber-300 mb-1">What this does</div>
+              <p className="text-[11px] text-slate-300 leading-relaxed">
+                {oppSel.kind === "content" ? "Creates a content brief for the Copywriter Agent — keyword, target and priority — so this article gets written and published for the traffic it's missing."
+                  : oppSel.kind === "competitive" ? "Generates a real SEO landing page targeting this gap the competitors rank for. Saved as a Draft — review & publish in Pages to compete for it."
+                  : "Opens the Marketplace Growth agent to act on this provider-growth opportunity (discover, enrich and onboard the providers behind this revenue)."}
+              </p>
+            </div>
+
+            <button onClick={runOppAction} disabled={oppBusy} className="w-full inline-flex items-center justify-center gap-2 h-10 rounded-lg bg-gradient-to-r from-brand-500 to-violet-600 text-white text-sm font-semibold disabled:opacity-50">
+              {oppBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+              {oppSel.kind === "content" ? "Create Content Brief" : oppSel.kind === "competitive" ? "Create this Page" : "Open in Marketplace Growth"}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

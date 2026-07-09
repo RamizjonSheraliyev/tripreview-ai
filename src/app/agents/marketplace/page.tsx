@@ -11,7 +11,7 @@ import { FadeUp, Stagger, Item, motion } from "@/components/motion";
 import {
   fetchMe, getStoredUser, getMarketplaceGrowth, getMarketplaceProviders, discoverProviders, mktPublish, mktToSales, getProviderDiscovery, mktBulkPublish,
   getUnclaimedProfiles, mktDelete, mktToOnboarding, mktEnrich, getClaimFunnel, mktClaimInvite, getLeadScoring, getCategoryCoverage, getLocationCoverage,
-  getDataQuality, mktEnrichBatch, mktMergeDuplicates, getExpansionOpportunities,
+  getDataQuality, mktEnrichBatch, mktMergeDuplicates, getExpansionOpportunities, mktEnrichAll,
   type MarketplaceData, type MktProvider, type DiscoveryData, type DiscoveryRow, type UnclaimedData, type UnclaimedRow, type ClaimFunnelData, type LeadScoringData, type CategoryCoverageData, type LocationCoverageData, type DataQualityData, type ExpansionData, type Kpi, type Seg,
 } from "@/lib/api";
 
@@ -52,7 +52,12 @@ function Mini({ series, color }: { series: number[]; color: string }) {
   return <svg viewBox={`0 0 ${w} ${h}`} className="w-full" style={{ height: h }} preserveAspectRatio="none"><motion.polyline points={series.map((v, i) => `${x(i)},${y(v)}`).join(" ")} fill="none" stroke={color} strokeWidth="2" vectorEffect="non-scaling-stroke" initial={{ pathLength: 0 }} animate={{ pathLength: 1 }} transition={{ duration: 0.8 }} /></svg>;
 }
 function Bar({ pct, color }: { pct: number; color: string }) { return <div className="h-1.5 rounded-full bg-ink-800 overflow-hidden"><motion.div className="h-full rounded-full" style={{ background: color }} initial={{ width: 0 }} animate={{ width: `${Math.min(100, pct)}%` }} transition={{ duration: 0.7, ease: "easeOut" }} /></div>; }
-function Logo({ url, name }: { url?: string; name: string }) { return url ? <img src={url} alt={name} className="w-9 h-9 rounded-lg object-cover bg-white/5 border border-ink-800 shrink-0" /> : <span className="w-9 h-9 rounded-lg bg-gradient-to-br from-brand-500 to-violet-600 grid place-items-center text-[10px] font-bold text-white shrink-0">{(name || "?").split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase()}</span>; }
+function Logo({ url, name }: { url?: string; name: string }) {
+  const [err, setErr] = useState(false);
+  const initials = (name || "?").split(" ").filter(Boolean).map((w) => w[0]).join("").slice(0, 2).toUpperCase() || "?";
+  if (url && !err) return <img src={url} alt={name} onError={() => setErr(true)} className="w-9 h-9 rounded-lg object-cover bg-white border border-ink-800 shrink-0" />;
+  return <span className="w-9 h-9 rounded-lg bg-gradient-to-br from-brand-500 to-violet-600 grid place-items-center text-[10px] font-bold text-white shrink-0">{initials}</span>;
+}
 function Score({ s }: { s: number }) { return <span className={`w-8 h-8 inline-grid place-items-center rounded-full border text-[11px] font-bold ${s >= 70 ? "border-emerald-500/40 text-emerald-300" : s >= 50 ? "border-amber-500/40 text-amber-300" : "border-slate-600 text-slate-400"}`}>{s}</span>; }
 
 export default function MarketplacePage() {
@@ -374,7 +379,10 @@ function UnclaimedTab({ flash }: { flash: (m: string) => void }) {
   const toggle = (id: string) => setSel((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const act = async (id: string, fn: () => Promise<{ ok: boolean; message?: string }>, lbl: string) => { setBusy(id + lbl); try { const r = await fn(); flash(r.ok ? `✓ ${r.message}` : (r.message || "Failed")); await fetchData(); } finally { setBusy(""); } };
   const bulk = async (fn: (ids: string[]) => Promise<{ ok: boolean; message?: string }>, lbl: string) => { if (!sel.size) { flash("Select profiles first."); return; } setBusy(lbl); try { const r = await fn(Array.from(sel)); flash(r.ok ? `✓ ${r.message}` : "Failed"); setSel(new Set()); await fetchData(); } finally { setBusy(""); } };
-  const enrichSel = async () => { if (!sel.size) { flash("Select profiles first."); return; } setBusy("enrich"); flash(`Enriching ${sel.size} profiles via web search…`); try { let n = 0; for (const id of Array.from(sel)) { const r = await mktEnrich(id); if (r.ok) n++; } flash(`✓ Enriched ${n} profiles.`); setSel(new Set()); await fetchData(); } finally { setBusy(""); } };
+  const enrichSel = async () => { if (!sel.size) { flash("Select profiles first."); return; } setBusy("enrich"); flash(`Enriching ${sel.size} profiles from the web (logo · description · reviews)…`); try { let n = 0; for (const id of Array.from(sel)) { const r = await mktEnrich(id); if (r.ok) n++; } flash(`✓ Enriched ${n} profiles — logos, descriptions & real web reviews added.`); setSel(new Set()); await fetchData(); } finally { setBusy(""); } };
+  // Enrich ALL thin providers (no logo / no reviews / no description) in one go —
+  // pulls logo, description and real web reviews, recomputes trust score.
+  const enrichAll = async () => { setBusy("enrichAll"); flash("Enriching providers from the web (logo · description · real reviews)… this can take a minute."); try { const r = await mktEnrichAll(12); flash(r.ok ? `✓ ${r.message}` : (r.message || "Enrichment failed.")); await fetchData(); } finally { setBusy(""); } };
 
   if (loading && !d) return <div className="grid place-items-center py-32 text-slate-600"><Loader2 className="w-8 h-8 animate-spin" /></div>;
   if (!d) return null;
@@ -406,11 +414,12 @@ function UnclaimedTab({ flash }: { flash: (m: string) => void }) {
             <select value={category} onChange={(e) => setCategory(e.target.value)} className="bg-ink-900 border border-ink-800 rounded-lg px-2 h-9 text-[11px] text-slate-300 outline-none"><option value="">All Categories</option>{d.categories.map((c) => <option key={c} value={c}>{c}</option>)}</select>
             <select value={source} onChange={(e) => setSource(e.target.value)} className="bg-ink-900 border border-ink-800 rounded-lg px-2 h-9 text-[11px] text-slate-300 outline-none"><option value="">All Sources</option>{d.sources.map((s) => <option key={s} value={s}>{s}</option>)}</select>
             <select value={confidence} onChange={(e) => setConfidence(e.target.value)} className="bg-ink-900 border border-ink-800 rounded-lg px-2 h-9 text-[11px] text-slate-300 outline-none"><option value="">All Confidence</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select>
+            <button onClick={enrichAll} disabled={!!busy} title="Auto-fill logos, descriptions & real web reviews for providers that are missing them, then recompute trust scores" className="ml-auto inline-flex items-center gap-1.5 px-3 h-9 rounded-lg bg-gradient-to-r from-violet-500 to-fuchsia-600 text-white text-[12px] font-semibold disabled:opacity-50">{busy === "enrichAll" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />} Enrich All from Web</button>
           </div>
 
           {sel.size > 0 && <div className="flex flex-wrap items-center gap-2 rounded-xl border border-brand-500/30 bg-brand-500/5 px-3 py-2">
             <span className="text-[12px] text-brand-200 font-semibold">{sel.size} selected:</span>
-            <button onClick={enrichSel} disabled={!!busy} className="inline-flex items-center gap-1 px-2.5 h-8 rounded-lg bg-ink-800 text-slate-200 text-[12px] font-semibold hover:bg-ink-700 disabled:opacity-50">{busy === "enrich" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />} Generate Missing Info</button>
+            <button onClick={enrichSel} disabled={!!busy} title="Web search: logo, description & real customer reviews (Google/Trustpilot) + trust score" className="inline-flex items-center gap-1 px-2.5 h-8 rounded-lg bg-ink-800 text-slate-200 text-[12px] font-semibold hover:bg-ink-700 disabled:opacity-50">{busy === "enrich" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />} Enrich from Web (logo · reviews)</button>
             <button onClick={() => bulk(mktToOnboarding, "onb")} disabled={!!busy} className="inline-flex items-center gap-1 px-2.5 h-8 rounded-lg bg-ink-800 text-slate-200 text-[12px] font-semibold hover:bg-ink-700 disabled:opacity-50">{busy === "onb" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UserCheck className="w-3.5 h-3.5" />} Send to Onboarding</button>
             <button onClick={() => bulk(mktBulkPublish, "pub")} disabled={!!busy} className="inline-flex items-center gap-1 px-2.5 h-8 rounded-lg bg-emerald-500/15 text-emerald-300 text-[12px] font-semibold hover:bg-emerald-500/25 disabled:opacity-50">{busy === "pub" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />} Bulk Publish</button>
             <button onClick={() => bulk(mktDelete, "del")} disabled={!!busy} className="inline-flex items-center gap-1 px-2.5 h-8 rounded-lg bg-rose-500/15 text-rose-300 text-[12px] font-semibold hover:bg-rose-500/25 disabled:opacity-50">{busy === "del" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />} Delete</button>

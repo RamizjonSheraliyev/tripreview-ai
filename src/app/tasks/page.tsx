@@ -5,13 +5,13 @@ import { useRouter } from "next/navigation";
 import {
   ListChecks, Plus, Search, MoreHorizontal, CheckCircle2, Circle, CircleDot,
   Calendar, ArrowLeft, ChevronLeft, ChevronRight, PenLine, MessageSquare,
-  X, Trash2, FileText, Download, Users, Bell, Loader2, AlertTriangle, Send, CheckSquare, Paperclip, Smile,
+  X, Trash2, FileText, Download, Users, Bell, Loader2, AlertTriangle, Send, CheckSquare, Paperclip, Smile, Sparkles,
 } from "lucide-react";
 import Sidebar from "@/components/Sidebar";
 import { FadeUp, Stagger, Item, motion } from "@/components/motion";
 import {
   fetchMe, getStoredUser, getTaskStats, listTasks, getTask, createTask, updateTask, deleteTask,
-  completeTask, toggleChecklistItem, addChecklistItem, addTaskComment,
+  completeTask, toggleChecklistItem, addChecklistItem, addTaskComment, generateTaskBrief,
   type TaskRow, type TaskFull, type TaskStats, type TaskInput,
 } from "@/lib/api";
 
@@ -301,6 +301,7 @@ function TaskDetail({ id, onBack, onOpen }: { id: string; onBack: () => void; on
   if (loading || !t) return <div className="grid place-items-center py-24 text-slate-600"><Loader2 className="w-7 h-7 animate-spin" /></div>;
 
   const act = async (fn: () => Promise<{ task: TaskFull }>) => { setBusy(true); try { setT((await fn()).task); } finally { setBusy(false); } };
+  const genBrief = async () => { setBusy(true); try { const r = await generateTaskBrief(id); setT(r.task); } finally { setBusy(false); } };
   const toggle = (itemId: string) => act(() => toggleChecklistItem(id, itemId));
   const complete = () => act(() => completeTask(id));
   const addItem = async () => { if (!newItem.trim()) return; await act(() => addChecklistItem(id, newItem.trim())); setNewItem(""); };
@@ -314,6 +315,7 @@ function TaskDetail({ id, onBack, onOpen }: { id: string; onBack: () => void; on
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <button onClick={onBack} className="inline-flex items-center gap-1.5 text-[12px] text-slate-400 hover:text-white"><ArrowLeft className="w-4 h-4" /> Back to Tasks</button>
         <div className="flex items-center gap-2">
+          <button disabled={busy} onClick={genBrief} title="AI: fill objective, deliverables, acceptance criteria & checklist" className="inline-flex items-center gap-1.5 px-3 h-9 rounded-lg border border-violet-500/30 text-violet-300 text-[12px] font-semibold hover:bg-violet-500/10 disabled:opacity-50">{busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />} Generate Brief</button>
           <button disabled={busy || t.status === "Completed"} onClick={complete} className="inline-flex items-center gap-1.5 px-3 h-9 rounded-lg border border-emerald-500/30 text-emerald-300 text-[12px] font-semibold hover:bg-emerald-500/10 disabled:opacity-50"><CheckCircle2 className="w-4 h-4" /> {t.status === "Completed" ? "Completed" : "Mark Complete"}</button>
           <button onClick={() => setEditOpen(true)} className="inline-flex items-center gap-1.5 px-3 h-9 rounded-lg border border-ink-700 text-slate-300 text-[12px] font-semibold hover:bg-ink-800"><PenLine className="w-4 h-4" /> Edit Task</button>
         </div>
@@ -351,6 +353,14 @@ function TaskDetail({ id, onBack, onOpen }: { id: string; onBack: () => void; on
                     {t.objective.length > 0 && <Section title="Objective"><ul className="space-y-1.5">{t.objective.map((o, i) => <li key={i} className="flex items-start gap-2 text-[12px] text-slate-300"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 mt-0.5 shrink-0" />{o}</li>)}</ul></Section>}
                     {t.deliverables.length > 0 && <Section title="Deliverables"><ul className="space-y-1.5">{t.deliverables.map((o, i) => <li key={i} className="flex items-start gap-2 text-[12px] text-slate-300"><span className="w-1 h-1 rounded-full bg-brand-400 mt-2 shrink-0" />{o}</li>)}</ul></Section>}
                     {t.acceptanceCriteria.length > 0 && <Section title="Acceptance Criteria"><ul className="space-y-1.5">{t.acceptanceCriteria.map((o, i) => <li key={i} className="flex items-start gap-2 text-[12px] text-slate-300"><CheckCircle2 className="w-3.5 h-3.5 text-sky-400 mt-0.5 shrink-0" />{o}</li>)}</ul></Section>}
+                    {t.objective.length === 0 && t.deliverables.length === 0 && t.acceptanceCriteria.length === 0 && (
+                      <div className="rounded-xl border border-dashed border-violet-500/30 bg-violet-500/5 p-4 text-center">
+                        <Sparkles className="w-5 h-5 text-violet-300 mx-auto mb-1.5" />
+                        <div className="text-[12px] font-semibold text-white">No detailed brief yet</div>
+                        <p className="text-[11px] text-slate-400 mt-0.5 mb-3">Let AI turn this task into a full brief — objective, deliverables, acceptance criteria and a step-by-step checklist.</p>
+                        <button onClick={genBrief} disabled={busy} className="inline-flex items-center gap-1.5 px-3 h-9 rounded-lg bg-gradient-to-r from-violet-500 to-fuchsia-600 text-white text-[12px] font-semibold disabled:opacity-50">{busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />} Generate Brief</button>
+                      </div>
+                    )}
                   </div>
                   <div className="space-y-2.5">
                     <Meta label="Assignee" value={<span className="inline-flex items-center gap-1.5"><Avatar name={t.assignee} />{t.assignee}</span>} />

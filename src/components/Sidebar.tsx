@@ -4,8 +4,8 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   Sparkles, LogOut, ExternalLink,
-  LayoutDashboard, Crown, MessageSquare, ListChecks,
-  Megaphone, Search, PenLine, Send, Share2, Radar, Briefcase, UserCheck, Network,
+  LayoutDashboard, Crown, MessageSquare, ListChecks, Gavel,
+  Megaphone, Search, PenLine, Send, Share2, Radar, Briefcase, UserCheck, Network, Link2,
   TrendingUp, BarChart3, DollarSign, FileText,
   Plug, Settings, ScrollText,
 } from "lucide-react";
@@ -24,6 +24,7 @@ const GROUPS: NavGroup[] = [
     items: [
       { label: "AI Command Center", icon: LayoutDashboard, href: "/dashboard" },
       { label: "AI CEO / Orchestrator", icon: Crown, href: "/ceo", dot: true },
+      { label: "Decision Center", icon: Gavel, href: "/decision-center", dot: true },
       { label: "Communication Center", icon: MessageSquare, href: "/communication", dot: true },
       { label: "Task Center", icon: ListChecks, href: "/tasks", dot: true },
       { label: "Marketing Director", icon: Megaphone, href: "/agents/marketing", dot: true },
@@ -35,6 +36,7 @@ const GROUPS: NavGroup[] = [
       { label: "Marketplace Growth", icon: Network, href: "/agents/marketplace", dot: true },
       { label: "Content Distribution", icon: Share2, href: "/agents/distribution", dot: true },
       { label: "Competitive Intelligence", icon: Radar, href: "/agents/competitive", dot: true },
+      { label: "Backlink Builder", icon: Link2, href: "/agents/backlink", dot: true },
     ],
   },
   {

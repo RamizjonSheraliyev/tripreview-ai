@@ -12,8 +12,8 @@ import Sidebar from "@/components/Sidebar";
 import { FadeUp, Stagger, Item, motion } from "@/components/motion";
 import {
   fetchMe, getStoredUser, getCompetitiveOverview, ciScan, getCompetitiveBriefing, getCompetitors, ciAddCompetitor, getContentIntelligence, ciScanContent, getPageOpportunities, getBacklinkIntel,
-  getReports, ciGenerateReport, ciScheduleReport, ciToggleSchedule, ciDeleteSchedule,
-  type CompetitiveData, type CompetitorsData, type CompetitorFull, type ContentIntelData, type PageOppsData, type BacklinkData, type ReportsData, type Kpi, type Seg,
+  getReports, ciGenerateReport, ciScheduleReport, ciToggleSchedule, ciDeleteSchedule, generateLandingPage, createBrief,
+  type CompetitiveData, type CompetitorsData, type CompetitorFull, type ContentIntelData, type PageOppsData, type PageOpp, type BacklinkData, type ReportsData, type Kpi, type Seg,
 } from "@/lib/api";
 
 const TABS = ["Overview", "Competitors", "Content Intelligence", "Page Opportunities", "Backlinks", "Reports"];
@@ -605,6 +605,9 @@ function ContentIntelTab({ flash }: { flash: (m: string) => void }) {
 }
 
 /* ── Page Opportunities tab ─────────────────────────────────────────────── */
+const PUBLIC_SITE = (process.env.NEXT_PUBLIC_SITE_URL || "https://tripreview.ae").replace(/\/+$/, "");
+// A created landing page, keyed by keyword: where it went + its status.
+type CreatedPage = { id: string; slug: string; locale: string; url: string; status: string; title: string };
 const prioPill = (p: string) => (p === "High" ? "bg-rose-500/15 text-rose-300" : p === "Medium" ? "bg-amber-500/15 text-amber-300" : p === "Low" ? "bg-emerald-500/15 text-emerald-300" : "bg-sky-500/15 text-sky-300");
 const kdColor = (kd: number) => (kd < 20 ? "text-emerald-300" : kd < 30 ? "text-amber-300" : "text-rose-300");
 function KpiBox({ icon: Icon, label, value, trend, color, sub }: { icon: React.ElementType; label: string; value: React.ReactNode; trend?: number; color: string; sub?: React.ReactNode }) {
@@ -616,7 +619,43 @@ function PageOppsTab({ flash }: { flash: (m: string) => void }) {
   const [loading, setLoading] = useState(true);
   const [category, setCategory] = useState(""); const [type, setType] = useState(""); const [priority, setPriority] = useState(""); const [competitor, setCompetitor] = useState(""); const [q, setQ] = useState("");
   const [page, setPage] = useState(1); const [busy, setBusy] = useState("");
+  const [sel, setSel] = useState<PageOpp | null>(null);           // detail drawer
+  const [created, setCreated] = useState<Record<string, CreatedPage>>({}); // keyword → created page
+  const [saved, setSaved] = useState<Record<string, boolean>>({});          // bookmark watchlist
+  const router = useRouter();
   const fetchData = useCallback(async () => { setLoading(true); try { setD(await getPageOpportunities({ category, type, priority, competitor, q, page, perPage: 10 })); } finally { setLoading(false); } }, [category, type, priority, competitor, q, page]);
+
+  // Really create the SEO landing page for this opportunity (AI-generated draft),
+  // then record where it went so the row + drawer can link straight to it.
+  const createPage = useCallback(async (o: PageOpp) => {
+    if (created[o.keyword] || busy) return;
+    setBusy(`create:${o.keyword}`);
+    try {
+      const r = await generateLandingPage(o.keyword);
+      if (r.ok && r.page) {
+        const cp: CreatedPage = { id: r.page._id, slug: r.page.slug, locale: r.page.locale || "en", url: `${PUBLIC_SITE}/${r.page.locale || "en"}/${r.page.slug}`, status: r.page.status || "Draft", title: r.page.heroTitle || o.keyword };
+        setCreated((m) => ({ ...m, [o.keyword]: cp }));
+        flash(`✓ Page created for “${o.keyword}” (${cp.status}) → ${cp.url}${r.ai ? " · AI-written" : ""}. Review & publish in AI CEO → Pages.`);
+      } else flash("Could not create the page — try again.");
+    } catch (e) { flash(e instanceof Error ? e.message : "Page creation failed."); }
+    finally { setBusy(""); }
+  }, [created, busy, flash]);
+
+  // Really create content briefs (for the Copywriter) from the top high-priority
+  // opportunities on this page — not a toast, real ContentBrief records.
+  const genBriefs = useCallback(async () => {
+    if (busy || !d) return;
+    setBusy("briefs");
+    try {
+      const high = d.table.rows.filter((r) => r.priority === "High");
+      const use = (high.length ? high : d.table.rows).slice(0, 5);
+      let n = 0;
+      for (const o of use) {
+        try { await createBrief({ title: o.keyword, primaryKeyword: o.keyword, keywordDifficulty: o.kd, searchVolume: o.searchVolume, contentType: o.contentType, priority: o.priority, category: o.category }); n++; } catch { /* skip one */ }
+      }
+      flash(n ? `✓ Created ${n} content brief${n === 1 ? "" : "s"} → Copywriter Agent → Content Briefs.` : "Could not create briefs — try again.");
+    } finally { setBusy(""); }
+  }, [busy, d, flash]);
   useEffect(() => { const t = setTimeout(fetchData, q ? 300 : 0); return () => clearTimeout(t); }, [fetchData, q]);
 
   const exportCsv = async () => {
@@ -678,9 +717,13 @@ function PageOppsTab({ flash }: { flash: (m: string) => void }) {
                 <td className="px-1 text-right text-emerald-300 font-semibold">{fmtK(o.trafficPotential)}</td>
                 <td className="px-1 text-center"><span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold ${prioPill(o.priority)}`}>{o.priority}</span></td>
                 <td className="px-1"><div className="flex items-center justify-center gap-1.5 text-slate-500">
-                  <button onClick={() => flash(`${o.keyword}: vol ${o.searchVolume.toLocaleString()}, KD ${o.kd}, ${fmtK(o.trafficPotential)} traffic potential. Competitors: ${o.ranking.join(", ")}.`)} title="Details" className="hover:text-white"><Eye className="w-3.5 h-3.5" /></button>
-                  <button onClick={() => flash(`✓ Page brief queued for “${o.keyword}” → handed to Copywriter Agent.`)} title="Create page" className="hover:text-white"><Plus className="w-3.5 h-3.5" /></button>
-                  <button onClick={() => flash(`Saved “${o.keyword}” to opportunity watchlist.`)} title="Save" className="hover:text-white"><Bookmark className="w-3.5 h-3.5" /></button>
+                  <button onClick={() => setSel(o)} title="View details" className="hover:text-white"><Eye className="w-3.5 h-3.5" /></button>
+                  {created[o.keyword] ? (
+                    <a href={created[o.keyword].url} target="_blank" rel="noreferrer" title="View created page" className="text-emerald-400 hover:text-emerald-300"><ExternalLink className="w-3.5 h-3.5" /></a>
+                  ) : (
+                    <button onClick={() => createPage(o)} disabled={!!busy} title="Create page" className="hover:text-violet-300 disabled:opacity-40">{busy === `create:${o.keyword}` ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}</button>
+                  )}
+                  <button onClick={() => { setSaved((s) => ({ ...s, [o.keyword]: !s[o.keyword] })); flash(saved[o.keyword] ? `Removed “${o.keyword}” from watchlist.` : `Saved “${o.keyword}” to watchlist.`); }} title="Save to watchlist" className={saved[o.keyword] ? "text-amber-400" : "hover:text-white"}><Bookmark className={`w-3.5 h-3.5 ${saved[o.keyword] ? "fill-amber-400" : ""}`} /></button>
                 </div></td>
               </tr>
             ))}</tbody>
@@ -734,12 +777,12 @@ function PageOppsTab({ flash }: { flash: (m: string) => void }) {
           <div className="rounded-xl border border-ink-800 bg-ink-800/30 p-3 flex flex-col">
             <div className="flex items-center gap-2 mb-1.5"><span className="w-7 h-7 rounded-lg bg-violet-500/15 text-violet-300 grid place-items-center"><FileText className="w-3.5 h-3.5" /></span><span className="text-[12px] font-semibold text-white">Content Briefs</span></div>
             <p className="text-[10px] text-slate-500 flex-1">Generate AI content briefs for your top {d.counts.total} page opportunities.</p>
-            <button onClick={() => flash(`✓ ${d.counts.high} content briefs queued → handed to Copywriter Agent.`)} className="mt-2 text-[11px] text-violet-300 hover:text-violet-200 text-left">Generate Briefs →</button>
+            <button onClick={genBriefs} disabled={!!busy} className="mt-2 text-[11px] text-violet-300 hover:text-violet-200 text-left disabled:opacity-50 inline-flex items-center gap-1">{busy === "briefs" && <Loader2 className="w-3 h-3 animate-spin" />} Generate Briefs →</button>
           </div>
           <div className="rounded-xl border border-ink-800 bg-ink-800/30 p-3 flex flex-col">
             <div className="flex items-center gap-2 mb-1.5"><span className="w-7 h-7 rounded-lg bg-sky-500/15 text-sky-300 grid place-items-center"><BarChart3 className="w-3.5 h-3.5" /></span><span className="text-[12px] font-semibold text-white">Track Progress</span></div>
             <p className="text-[10px] text-slate-500 flex-1">Monitor rankings & traffic after publishing new opportunity pages.</p>
-            <button onClick={() => flash("Progress tracking is wired to the SEO Agent's rank monitor.")} className="mt-2 text-[11px] text-violet-300 hover:text-violet-200 text-left">Track →</button>
+            <button onClick={() => router.push("/agents/seo")} className="mt-2 text-[11px] text-violet-300 hover:text-violet-200 text-left">Open SEO Rank Monitor →</button>
           </div>
           <div className="rounded-xl border border-ink-800 bg-ink-800/30 p-3 flex flex-col">
             <div className="flex items-center gap-2 mb-1.5"><span className="w-7 h-7 rounded-lg bg-emerald-500/15 text-emerald-300 grid place-items-center"><Download className="w-3.5 h-3.5" /></span><span className="text-[12px] font-semibold text-white">Export Opportunities</span></div>
@@ -753,6 +796,64 @@ function PageOppsTab({ flash }: { flash: (m: string) => void }) {
           </div>
         </div>
       </Card></FadeUp>
+
+      <PageOppDrawer opp={sel} created={sel ? created[sel.keyword] : undefined} busy={busy} onCreate={createPage} onClose={() => setSel(null)} />
+    </div>
+  );
+}
+
+// Side drawer with the full opportunity detail + a REAL "Create this page"
+// action, and — once created — exactly where the page went (its live URL).
+function PageOppDrawer({ opp, created, busy, onCreate, onClose }: { opp: PageOpp | null; created?: CreatedPage; busy: string; onCreate: (o: PageOpp) => void; onClose: () => void }) {
+  if (!opp) return null;
+  const isBusy = busy === `create:${opp.keyword}`;
+  const comp = opp.ranking.filter(Boolean);
+  const why = `Competitors ${comp.join(", ") || "in this niche"} rank for “${opp.keyword}” (${opp.searchVolume.toLocaleString()} searches/mo, difficulty ${opp.kd}) but TripReview.ae is ${opp.ourRanking == null ? "not ranked at all" : `only #${opp.ourRanking}`} — roughly ${fmtK(opp.trafficPotential)} visits/month left on the table.`;
+  const plan = [
+    "Generate an SEO landing page targeting this exact keyword",
+    "AI writes the hero, sections, comparison and FAQ grounded in the keyword",
+    "The page is saved as a Draft under AI CEO → Pages",
+    "Review & Publish → it goes live at the URL below and starts competing for this keyword",
+  ];
+  const meta: [string, string][] = [
+    ["Content Type", opp.contentType], ["Search Volume", `${opp.searchVolume.toLocaleString()}/mo`],
+    ["Keyword Difficulty", String(opp.kd)], ["Traffic Potential", `${fmtK(opp.trafficPotential)}/mo`],
+    ["Our Rank", opp.ourRanking == null ? "Not Ranked" : `#${opp.ourRanking}`], ["Priority", opp.priority],
+  ];
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end">
+      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+      <div className="relative w-full max-w-md h-full overflow-y-auto bg-ink-950 border-l border-ink-800 p-5 space-y-4">
+        <div className="flex items-start justify-between gap-3">
+          <div><div className="text-[10px] uppercase tracking-wide text-violet-300 font-bold">Page Opportunity</div><h3 className="text-base font-bold text-white leading-snug">{opp.keyword}</h3><div className="text-[11px] text-slate-500 break-all">{opp.slug} · {opp.category}</div></div>
+          <button onClick={onClose} className="text-slate-500 hover:text-white shrink-0"><X className="w-4 h-4" /></button>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2">
+          {meta.map(([l, v]) => (
+            <div key={l} className="rounded-lg border border-ink-800 bg-ink-900/50 p-2"><div className="text-[10px] text-slate-500">{l}</div><div className="text-[12px] text-slate-200 font-semibold">{v}</div></div>
+          ))}
+        </div>
+
+        {comp.length > 0 && (
+          <div><div className="text-[11px] font-semibold text-slate-400 mb-1.5">Competitors ranking for this</div><div className="space-y-1">{comp.map((n, i) => <div key={i} className="flex items-center gap-2 text-[11px] text-slate-300"><span className="w-4 h-4 rounded-full bg-ink-700 grid place-items-center text-[8px] font-bold text-slate-300">{i + 1}</span>{n}</div>)}</div></div>
+        )}
+
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3"><div className="text-[11px] font-bold text-amber-300 mb-1">Why this matters</div><p className="text-[11px] text-slate-300 leading-relaxed">{why}</p></div>
+
+        <div><div className="text-[11px] font-semibold text-slate-400 mb-1.5">What “Create this page” does</div><ol className="space-y-1.5">{plan.map((s, i) => <li key={i} className="flex gap-2 text-[11px] text-slate-300"><span className="w-4 h-4 rounded-full bg-violet-500/20 text-violet-300 grid place-items-center text-[8px] font-bold shrink-0 mt-0.5">{i + 1}</span><span>{s}</span></li>)}</ol></div>
+
+        {created ? (
+          <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 space-y-2">
+            <div className="text-[11px] font-bold text-emerald-300">✓ Page created — status: {created.status}</div>
+            <div className="text-[11px] text-slate-400">Where it went:</div>
+            <a href={created.url} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 text-[11px] text-emerald-300 hover:underline break-all"><ExternalLink className="w-3.5 h-3.5 shrink-0" />{created.url}</a>
+            <div className="text-[10px] text-slate-500">Review &amp; publish it in AI CEO → Pages to make it live on the site.</div>
+          </div>
+        ) : (
+          <button onClick={() => onCreate(opp)} disabled={isBusy} className="w-full inline-flex items-center justify-center gap-2 h-10 rounded-lg bg-gradient-to-r from-violet-500 to-fuchsia-600 text-white text-sm font-semibold disabled:opacity-50">{isBusy ? <><Loader2 className="w-4 h-4 animate-spin" /> Creating…</> : <><Plus className="w-4 h-4" /> Create this page</>}</button>
+        )}
+      </div>
     </div>
   );
 }

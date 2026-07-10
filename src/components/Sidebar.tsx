@@ -6,11 +6,10 @@ import {
   Sparkles, LogOut, ExternalLink,
   LayoutDashboard, Crown, MessageSquare, ListChecks, Gavel,
   Megaphone, Search, PenLine, Send, Share2, Radar, Briefcase, UserCheck, Network, Link2,
-  TrendingUp, BarChart3, DollarSign, FileText,
-  Plug, Settings, ScrollText,
 } from "lucide-react";
 import { logout } from "@/lib/api";
 import { StatusDot } from "@/components/motion";
+import ThemeToggle from "@/components/ThemeToggle";
 
 const ADMIN_URL = process.env.NEXT_PUBLIC_ADMIN_URL || "http://localhost:3001/admin";
 
@@ -37,23 +36,6 @@ const GROUPS: NavGroup[] = [
       { label: "Content Distribution", icon: Share2, href: "/agents/distribution", dot: true },
       { label: "Competitive Intelligence", icon: Radar, href: "/agents/competitive", dot: true },
       { label: "Authority Growth", icon: Link2, href: "/agents/backlink", dot: true },
-    ],
-  },
-  {
-    title: "Growth",
-    items: [
-      { label: "Growth Overview", icon: TrendingUp },
-      { label: "Traffic & Analytics", icon: BarChart3 },
-      { label: "Leads & Revenue", icon: DollarSign },
-      { label: "Reports & Insights", icon: FileText },
-    ],
-  },
-  {
-    title: "System",
-    items: [
-      { label: "Integrations", icon: Plug },
-      { label: "Settings", icon: Settings },
-      { label: "Audit Logs", icon: ScrollText },
     ],
   },
 ];
@@ -117,6 +99,8 @@ export default function Sidebar() {
           </svg>
         </div>
       </div>
+
+      <div className="px-3 pb-2 shrink-0"><ThemeToggle /></div>
 
       <div className="border-t border-ink-800 px-3 py-2.5 shrink-0">
         <div className="flex items-center gap-3 mb-2">

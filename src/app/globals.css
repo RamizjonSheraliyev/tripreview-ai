@@ -2,23 +2,72 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ===========================================================================
+ * Theme tokens. The whole dashboard is styled with ink-* (surfaces) and
+ * slate-* (text/borders) which are RGB-triplet CSS variables — so flipping the
+ * `light` class on <html> re-themes everything with no per-component changes.
+ * Default = dark. In light mode the ink ramp becomes light surfaces and the
+ * slate ramp INVERTS (so text-slate-200 = dark text on white).
+ * =========================================================================== */
 :root {
   color-scheme: dark;
+  --ink-950: 7 11 22;   --ink-900: 11 17 32;  --ink-850: 15 22 38;
+  --ink-800: 20 29 49;  --ink-700: 28 39 66;  --ink-600: 39 50 79;
+  --sl-50: 248 250 252; --sl-100: 241 245 249; --sl-200: 226 232 240;
+  --sl-300: 203 213 225; --sl-400: 148 163 184; --sl-500: 100 116 139;
+  --sl-600: 71 85 105;  --sl-700: 51 65 85;   --sl-800: 30 41 59;
+  --sl-900: 15 23 42;   --sl-950: 2 6 23;
+  --scrollbar: 28 39 66;
+}
+
+:root.light {
+  color-scheme: light;
+  --ink-950: 255 255 255; --ink-900: 248 250 252; --ink-850: 241 245 249;
+  --ink-800: 226 232 240; --ink-700: 203 213 225; --ink-600: 148 163 184;
+  /* inverted so text-slate-200/300 read as dark. Muted ramp (400/500/600) kept
+   * dark enough for real contrast on white — faint gray reads as "xira". */
+  --sl-50: 2 6 23;      --sl-100: 15 23 42;    --sl-200: 30 41 59;
+  --sl-300: 51 65 85;   --sl-400: 51 65 85;    --sl-500: 71 85 105;
+  --sl-600: 71 85 105;  --sl-700: 100 116 139; --sl-800: 226 232 240;
+  --sl-900: 241 245 249; --sl-950: 248 250 252;
+  --scrollbar: 203 213 225;
 }
 
 html,
 body {
-  background: #070b16;
-  color: #e2e8f0;
+  background: rgb(var(--ink-950));
+  color: rgb(var(--sl-200));
   font-family: "Inter", system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
-/* Subtle scrollbar for the dark theme */
+/* `text-white` is used both for headings on dark surfaces AND for labels on
+ * coloured buttons. In light mode flip plain headings to dark, but keep white
+ * where the same element also carries a coloured background. */
+:root.light .text-white,
+:root.light .hover\:text-white:hover,
+:root.light .group:hover .group-hover\:text-white { color: rgb(15 23 42); }
+:root.light [class*="bg-brand"].text-white,
+:root.light [class*="bg-gradient"].text-white,
+:root.light [class*="bg-emerald-5"].text-white,
+:root.light [class*="bg-emerald-6"].text-white,
+:root.light [class*="bg-rose-5"].text-white,
+:root.light [class*="bg-rose-6"].text-white,
+:root.light [class*="bg-violet-5"].text-white,
+:root.light [class*="bg-violet-6"].text-white,
+:root.light [class*="bg-sky-5"].text-white,
+:root.light [class*="bg-sky-6"].text-white,
+:root.light [class*="bg-amber-5"].text-white,
+:root.light [class*="bg-cyan-5"].text-white,
+:root.light [class*="bg-fuchsia-6"].text-white { color: #ffffff; }
+/* Solid dark buttons keep readable text in light mode. */
+:root.light .bg-white { background-color: #ffffff; }
+
+/* Scrollbar follows the theme */
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #1c2742; border-radius: 6px; }
-::-webkit-scrollbar-thumb:hover { background: #27324f; }
+::-webkit-scrollbar-thumb { background: rgb(var(--scrollbar)); border-radius: 6px; }
+::-webkit-scrollbar-thumb:hover { background: rgb(var(--ink-600)); }
 
 /* Pulse dot for live/active agents */
 @keyframes livePulse {

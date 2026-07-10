@@ -1779,16 +1779,28 @@ export type CrmData = {
 };
 export function getCRM(contact = "") { return request<CrmData>(`/admin/agents/sales/crm${contact ? `?contact=${contact}` : ""}`); }
 
-// ---- Backlink Builder Agent ----
+// ---- Authority Growth Agent (backlinks MVP) ----
 export type BlRow = {
   id: string; sourceDomain: string; sourceUrl: string; targetPath: string; anchor: string;
   type: "dofollow" | "nofollow" | "unknown"; status: "Opportunity" | "Submitted" | "Live" | "Rejected" | "Lost";
-  method: string; category: string; da: number; relevance: number; contactEmail: string;
-  outreachDraft: string; notes: string; discoveredVia: string;
+  method: string; category: string; da: number; relevance: number;
+  organicTraffic: number; country: string; language: string; spamScore: number; priorityScore: number; saved: boolean;
+  guestGuidelines: string; guestFreePaid: string; articleIdeas: string[]; guestDraft: string; guestPublishedAt: string | null;
+  contactPerson: string; contactEmail: string;
+  outreachDraft: string; outreachStatus: "" | "Draft" | "Sent" | "Opened" | "Replied" | "Successful" | "Failed";
+  lastContactAt: string | null; followUpAt: string | null;
+  outreachLog: { at: string; event: string; note: string }[];
+  anchorFound: string; liveStatus: "" | "Live" | "Lost" | "Redirected" | "Removed";
+  firstIndexedAt: string | null; competitorSource: string;
+  notes: string; discoveredVia: string;
   submittedAt: string | null; verifiedAt: string | null; lastCheckedAt: string | null; createdAt: string; updatedAt: string;
 };
 export type BlOverview = {
-  kpis: { total: number; live: number; dofollow: number; pending: number; opportunities: number; avgDomainAuthority: number };
+  kpis: {
+    drEstimate: number; referringDomains: number; total: number; live: number; qualified: number; new30d: number;
+    dofollow: number; pending: number; opportunities: number; outreachSent: number; outreachSuccessRate: number;
+    guestPostsPublished: number; avgDomainAuthority: number; minDr: number;
+  };
   byStatus: { label: string; count: number }[];
   byMethod: { label: string; count: number }[];
   byCategory: { label: string; count: number }[];
@@ -1796,15 +1808,33 @@ export type BlOverview = {
   channels: { key: string; label: string; connected: boolean; hint: string }[];
   ai: boolean;
 };
-export type BlList = { rows: BlRow[]; total: number; page: number; perPage: number; pages: number; statuses: string[]; methods: string[] };
+export type BlList = { rows: BlRow[]; total: number; page: number; perPage: number; pages: number; statuses: string[]; methods: string[]; countries: string[]; minDrFloor: number };
+type BlAct = { ok: boolean; message?: string; backlink?: BlRow };
 
 export function getBacklinkOverview() { return request<BlOverview>("/admin/agents/backlink/overview"); }
-export function getBacklinks(params: { status?: string; type?: string; method?: string; category?: string; q?: string; page?: number } = {}) { const s = new URLSearchParams(params as Record<string, string>).toString(); return request<BlList>(`/admin/agents/backlink/list${s ? `?${s}` : ""}`); }
-export function backlinkDiscover(body: { category?: string; count?: number }) { return request<{ ok: boolean; message?: string; created?: { id: string; domain: string }[] }>("/admin/agents/backlink/discover", { method: "POST", body: JSON.stringify(body) }); }
-export function backlinkAdd(body: Record<string, unknown>) { return request<{ ok: boolean; message?: string; backlink?: BlRow }>("/admin/agents/backlink", { method: "POST", body: JSON.stringify(body) }); }
-export function backlinkVerify(id: string) { return request<{ ok: boolean; found?: boolean; message?: string; backlink?: BlRow }>(`/admin/agents/backlink/${id}/verify`, { method: "POST" }); }
+export function getBacklinks(params: { status?: string; type?: string; method?: string; category?: string; country?: string; language?: string; minDr?: number; q?: string; saved?: string; page?: number } = {}) { const s = new URLSearchParams(params as unknown as Record<string, string>).toString(); return request<BlList>(`/admin/agents/backlink/list${s ? `?${s}` : ""}`); }
+export function backlinkDiscover(body: { category?: string; count?: number }) { return request<{ ok: boolean; message?: string; rejected?: number; created?: { id: string; domain: string }[] }>("/admin/agents/backlink/discover", { method: "POST", body: JSON.stringify(body) }); }
+export function backlinkAdd(body: Record<string, unknown>) { return request<BlAct>("/admin/agents/backlink", { method: "POST", body: JSON.stringify(body) }); }
+export function backlinkVerify(id: string) { return request<BlAct & { found?: boolean }>(`/admin/agents/backlink/${id}/verify`, { method: "POST" }); }
 export function backlinkVerifyAll() { return request<{ ok: boolean; message?: string; checked?: number; live?: number; lost?: number }>("/admin/agents/backlink/verify-all", { method: "POST" }); }
-export function backlinkOutreach(id: string) { return request<{ ok: boolean; message?: string; draft?: string; backlink?: BlRow }>(`/admin/agents/backlink/${id}/outreach`, { method: "POST" }); }
-export function backlinkSubmit(id: string) { return request<{ ok: boolean; message?: string; backlink?: BlRow }>(`/admin/agents/backlink/${id}/submit`, { method: "POST" }); }
-export function backlinkUpdate(id: string, patch: Record<string, unknown>) { return request<{ ok: boolean; backlink?: BlRow }>(`/admin/agents/backlink/${id}`, { method: "PATCH", body: JSON.stringify(patch) }); }
+export function backlinkOutreach(id: string) { return request<BlAct & { draft?: string }>(`/admin/agents/backlink/${id}/outreach`, { method: "POST" }); }
+export function backlinkSubmit(id: string) { return request<BlAct>(`/admin/agents/backlink/${id}/submit`, { method: "POST" }); }
+export function backlinkUpdate(id: string, patch: Record<string, unknown>) { return request<BlAct>(`/admin/agents/backlink/${id}`, { method: "PATCH", body: JSON.stringify(patch) }); }
 export function backlinkDelete(id: string) { return request<{ ok: boolean }>(`/admin/agents/backlink/${id}`, { method: "DELETE" }); }
+// Guest posting
+export function blGuestDiscover(body: { count?: number } = {}) { return request<{ ok: boolean; message?: string; created?: { id: string; domain: string }[] }>("/admin/agents/backlink/guest/discover", { method: "POST", body: JSON.stringify(body) }); }
+export function blArticleIdeas(id: string) { return request<BlAct & { ideas?: string[] }>(`/admin/agents/backlink/${id}/ideas`, { method: "POST" }); }
+export function blGuestDraft(id: string, idea?: string) { return request<BlAct>(`/admin/agents/backlink/${id}/guest-draft`, { method: "POST", body: JSON.stringify({ idea }) }); }
+export function blGuestPublished(id: string, url?: string) { return request<BlAct>(`/admin/agents/backlink/${id}/guest-published`, { method: "POST", body: JSON.stringify({ url }) }); }
+// Outreach manager
+export function blListOutreach(params: { page?: number } = {}) { const s = new URLSearchParams(params as unknown as Record<string, string>).toString(); return request<{ rows: BlRow[]; total: number; page: number; pages: number }>(`/admin/agents/backlink/outreach${s ? `?${s}` : ""}`); }
+export function blSendOutreach(id: string) { return request<BlAct>(`/admin/agents/backlink/${id}/send`, { method: "POST" }); }
+export function blScheduleFollowUp(id: string, days = 4) { return request<BlAct>(`/admin/agents/backlink/${id}/follow-up`, { method: "POST", body: JSON.stringify({ days }) }); }
+export function blSetOutreachStatus(id: string, status: string) { return request<BlAct>(`/admin/agents/backlink/${id}/outreach-status`, { method: "POST", body: JSON.stringify({ status }) }); }
+export function blRunFollowUps() { return request<{ ok: boolean; sent: number; due: number }>("/admin/agents/backlink/followups/run", { method: "POST" }); }
+// Competitor backlinks
+export function blCompetitorFinds() { return request<{ rows: BlRow[]; competitors: { name: string; website: string; dr: number; total: number; new7d: number; lost7d: number; topSource: string }[] }>("/admin/agents/backlink/competitors"); }
+export function blScanCompetitor(competitor?: string) { return request<{ ok: boolean; message?: string; competitor?: string; created?: { id: string; domain: string }[] }>("/admin/agents/backlink/competitors/scan", { method: "POST", body: JSON.stringify({ competitor }) }); }
+// Monitoring + reports
+export function blListMonitored() { return request<{ rows: BlRow[] }>("/admin/agents/backlink/monitor"); }
+export function blGenerateReport(period: "weekly" | "monthly") { return request<{ ok: boolean; period: string; content: string; filename: string; stats: { newLive: number; lost: number; newOpps: number; outreachSent: number; guest: number } }>("/admin/agents/backlink/report", { method: "POST", body: JSON.stringify({ period }) }); }

@@ -1006,7 +1006,7 @@ function TaskDetails({ task, busy, onExec, onClose }: { task: OrchTask; busy: bo
             <h3 className="text-base font-bold text-white">{task.task}</h3>
             <p className="text-[12px] text-slate-400 mt-1 leading-relaxed">{task.description}</p>
             {task.path && (
-              <a href={task.link || "#"} target="_blank" rel="noreferrer" className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-semibold text-brand-400 hover:underline">
+              <a href={`${PUBLIC_SITE}/en${task.path === "/" ? "" : task.path}`} target="_blank" rel="noreferrer" className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-semibold text-brand-400 hover:underline">
                 <Globe className="w-3 h-3" /> {task.page ? `${task.page} — ` : ""}/en{task.path === "/" ? "" : task.path} <ArrowRight className="w-3 h-3" />
               </a>
             )}

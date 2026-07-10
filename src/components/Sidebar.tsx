@@ -36,7 +36,7 @@ const GROUPS: NavGroup[] = [
       { label: "Marketplace Growth", icon: Network, href: "/agents/marketplace", dot: true },
       { label: "Content Distribution", icon: Share2, href: "/agents/distribution", dot: true },
       { label: "Competitive Intelligence", icon: Radar, href: "/agents/competitive", dot: true },
-      { label: "Backlink Builder", icon: Link2, href: "/agents/backlink", dot: true },
+      { label: "Authority Growth", icon: Link2, href: "/agents/backlink", dot: true },
     ],
   },
   {

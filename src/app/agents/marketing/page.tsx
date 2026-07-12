@@ -6,15 +6,22 @@ import {
   Megaphone, Sparkles, Calendar, Bell, Loader2, TrendingUp, TrendingDown, Users, ShoppingCart,
   Percent, DollarSign, BarChart3, CheckCircle2, ArrowRight, Globe, Send, Search, PenLine, Share2,
   X, Download, Clock, AlertTriangle, MoreHorizontal, ChevronLeft, ChevronRight, ListChecks, Zap, Target,
-  FolderOpen, Plus, Rocket, FileCheck2,
+  FolderOpen, Plus, Rocket, FileCheck2, RefreshCw, Link2, Megaphone as MegaphoneIcon,
+  Lightbulb, Eye, Trash2,
 } from "lucide-react";
 import Sidebar from "@/components/Sidebar";
+import AgentGate from "@/components/AgentGate";
 import { FadeUp, Stagger, Item, motion } from "@/components/motion";
 import {
   fetchMe, getStoredUser, getMarketingDirector, agentChat, getMarketingTasks, listTasks, completeTask,
   getMarketingPlansBoard, listMarketingPlans, completeMarketingPlan, deleteMarketingPlan, createMarketingPlan,
+  getMarketingCampaigns, syncMarketingCampaigns,
+  getBriefBoard, listBriefs, advanceBrief, updateBrief, deleteBrief,
+  getStrategy, type StrategyData,
+  getWorkforce, getActivity, type Workforce, type WfAgent, type Activity,
   type MarketingData, type AgentChatTurn, type MarketingTasks, type TaskRow,
-  type MarketingPlansBoard, type MarketingPlanRow,
+  type MarketingPlansBoard, type MarketingPlanRow, type AdCampaigns, type AdCampaignRow,
+  type BriefRow, type BriefBoard,
 } from "@/lib/api";
 
 const IMP: Record<string, string> = { High: "bg-rose-500/15 text-rose-300", Medium: "bg-amber-500/15 text-amber-300", Low: "bg-sky-500/15 text-sky-300" };
@@ -89,6 +96,7 @@ export default function MarketingDirectorPage() {
   return (
     <div className="flex min-h-screen bg-ink-950 text-slate-200">
       <Sidebar />
+        <AgentGate agentId="marketing" label="Marketing Director" accent="from-violet-500 to-brand-600" />
       <main className="flex-1 min-w-0">
         <header className="sticky top-0 z-30 h-16 border-b border-ink-800 bg-ink-950/80 backdrop-blur flex items-center gap-3 px-5">
           <span className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-500 to-brand-600 grid place-items-center shrink-0"><Megaphone className="w-5 h-5 text-white" /></span>
@@ -106,7 +114,7 @@ export default function MarketingDirectorPage() {
         </div></div>
 
         <div className="p-5 space-y-5">
-          {loading || !data ? <div className="grid place-items-center py-32 text-slate-600"><Loader2 className="w-8 h-8 animate-spin" /></div> : tab === "Tasks" ? <MarketingTasksTab /> : tab === "Plans" ? <MarketingPlansTab /> : (
+          {loading || !data ? <div className="grid place-items-center py-32 text-slate-600"><Loader2 className="w-8 h-8 animate-spin" /></div> : tab === "Tasks" ? <MarketingTasksTab /> : tab === "Plans" ? <MarketingPlansTab /> : tab === "Campaigns" ? <CampaignsTab /> : tab === "Content Ideas" ? <ContentIdeasTab /> : tab === "Recommendations" ? <RecommendationsTab /> : tab === "Agent Collaboration" ? <AgentCollaborationTab /> : (
             <>
               {/* KPI row */}
               <Stagger className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
@@ -645,5 +653,583 @@ function InsightsTab({ data }: { data: MarketingData }) {
         </Card></FadeUp>
       </div>
     </>
+  );
+}
+
+/* ---------------- Campaigns tab — REAL paid-ad data (Google Ads / Meta) ---------------- */
+function CampaignsTab() {
+  const [data, setData] = useState<AdCampaigns | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
+  useEffect(() => { getMarketingCampaigns().then(setData).catch(() => setData(null)).finally(() => setLoading(false)); }, []);
+  const sync = async () => { setSyncing(true); try { setData(await syncMarketingCampaigns()); } catch { /* keep */ } finally { setSyncing(false); } };
+
+  if (loading) return <div className="grid place-items-center py-24 text-slate-600"><Loader2 className="w-7 h-7 animate-spin" /></div>;
+  if (!data) return <div className="rounded-2xl border border-ink-800 bg-ink-900/50 p-8 text-center text-slate-500 text-[13px]">Couldn&apos;t load campaigns.</div>;
+
+  const cur = data.currency || "AED";
+  const money = (n: number) => `${cur} ${Math.round(n).toLocaleString()}`;
+  const connected = data.connected.google || data.connected.meta;
+
+  // ---- Not connected: honest connect CTA (no demo numbers) ----
+  if (!connected) {
+    const platforms = [
+      { name: "Google Ads", on: data.connected.google, err: data.errors?.google, Icon: Search, vars: ["GOOGLE_ADS_DEVELOPER_TOKEN", "GOOGLE_ADS_CLIENT_ID", "GOOGLE_ADS_CLIENT_SECRET", "GOOGLE_ADS_REFRESH_TOKEN", "GOOGLE_ADS_CUSTOMER_ID"] },
+      { name: "Meta Ads", on: data.connected.meta, err: data.errors?.meta, Icon: Share2, vars: ["META_ADS_ACCESS_TOKEN", "META_ADS_ACCOUNT_ID"] },
+    ];
+    return (
+      <div className="space-y-5">
+        <div className="rounded-2xl border border-brand-500/30 bg-brand-500/5 p-6 text-center">
+          <span className="w-12 h-12 rounded-2xl bg-brand-600/20 text-brand-300 grid place-items-center mx-auto mb-3"><MegaphoneIcon className="w-6 h-6" /></span>
+          <h3 className="text-base font-bold text-white">Connect your ad accounts</h3>
+          <p className="text-[12px] text-slate-400 mt-1 max-w-xl mx-auto">Campaigns show 100% real spend, ROAS &amp; conversions pulled live from Google Ads and Meta. Add your own credentials to the backend <span className="text-slate-200 font-mono">.env</span> and restart — no demo data is ever shown here.</p>
+          <button onClick={sync} disabled={syncing} className="mt-4 inline-flex items-center gap-1.5 px-4 h-9 rounded-lg bg-brand-600 text-white text-[12px] font-semibold disabled:opacity-50">{syncing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />} Check connection</button>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          {platforms.map((p) => (
+            <div key={p.name} className="rounded-2xl border border-ink-800 bg-ink-900/50 p-4">
+              <div className="flex items-center gap-2 mb-3"><span className="w-9 h-9 rounded-lg bg-ink-800 text-brand-300 grid place-items-center"><p.Icon className="w-4.5 h-4.5" /></span><div><div className="text-[13px] font-bold text-white">{p.name}</div><div className={`text-[10px] font-semibold ${p.on ? "text-emerald-400" : "text-slate-500"}`}>{p.on ? "● Connected" : "○ Not connected"}</div></div></div>
+              <div className="text-[10px] uppercase tracking-wide text-slate-600 mb-1.5">Set these in backend .env</div>
+              <ul className="space-y-1">{p.vars.map((v) => <li key={v} className="text-[11px] font-mono text-slate-400 flex items-center gap-1.5"><Link2 className="w-3 h-3 text-slate-600 shrink-0" />{v}</li>)}</ul>
+              {p.err && <div className="mt-2 rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 py-1.5 text-[10px] text-rose-300">{p.err}</div>}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // ---- Connected: real overview + funnel + mixes + table ----
+  const ov = data.overview!, fn = data.funnel!;
+  const kpis: { label: string; value: React.ReactNode; Icon: React.ElementType }[] = [
+    { label: "Total Campaigns", value: ov.totalCampaigns, Icon: Megaphone },
+    { label: "Active Campaigns", value: ov.activeCampaigns, Icon: Zap },
+    { label: "Total Spend", value: money(ov.totalSpend), Icon: DollarSign },
+    { label: "Conversions", value: ov.totalConversions.toLocaleString(), Icon: Target },
+    { label: "Avg ROAS", value: `${ov.avgRoas}x`, Icon: TrendingUp },
+    { label: "Cost / Conv.", value: money(ov.costPerConversion), Icon: Percent },
+  ];
+  const CH_COLORS = ["#8b5cf6", "#34d399", "#fbbf24", "#38bdf8", "#fb7185"];
+  const ST_COLOR: Record<string, string> = { Active: "#34d399", Paused: "#fbbf24", Completed: "#38bdf8", Other: "#8b5cf6" };
+  const funnelRows = [
+    { label: "Impressions", value: kfmt(fn.impressions), sub: "" },
+    { label: "Clicks", value: kfmt(fn.clicks), sub: `${fn.ctr}% CTR` },
+    { label: "Conversions", value: kfmt(fn.conversions), sub: `${fn.cvr}% CVR` },
+    { label: "Revenue", value: money(fn.revenue), sub: "" },
+  ];
+  const chTot = data.channelMix.reduce((s, c) => s + c.spend, 0);
+  const stTot = data.statusMix.reduce((s, c) => s + c.count, 0);
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div><h2 className="text-sm font-bold text-white">Campaign Overview</h2><p className="text-[11px] text-slate-500">Live from {data.connected.google && data.connected.meta ? "Google Ads + Meta" : data.connected.google ? "Google Ads" : "Meta Ads"} · synced {data.syncedAt ? new Date(data.syncedAt).toLocaleString() : "—"}</p></div>
+        <button onClick={sync} disabled={syncing} className="inline-flex items-center gap-1.5 px-3 h-9 rounded-lg border border-ink-700 text-slate-300 text-[12px] font-semibold hover:bg-ink-800 disabled:opacity-50">{syncing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />} Sync now</button>
+      </div>
+
+      <Stagger className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
+        {kpis.map((c) => (
+          <Item key={c.label} className="rounded-2xl border border-ink-800 bg-ink-900/50 p-4">
+            <div className="flex items-center justify-between"><span className="text-[10px] text-slate-500 leading-tight">{c.label}</span><span className="w-7 h-7 rounded-lg bg-ink-800 text-brand-300 grid place-items-center"><c.Icon className="w-3.5 h-3.5" /></span></div>
+            <div className="mt-1.5 text-xl font-extrabold text-white truncate">{c.value}</div>
+          </Item>
+        ))}
+      </Stagger>
+
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
+        <FadeUp><Card title="Campaign Funnel">
+          <ul className="space-y-2.5">{funnelRows.map((f, i) => (
+            <li key={f.label} className="flex items-center gap-3"><span className="w-6 text-[10px] text-slate-600">{i + 1}</span><div className="flex-1 min-w-0"><div className="flex items-center justify-between"><span className="text-[12px] text-slate-300">{f.label}</span><span className="text-[13px] font-bold text-white">{f.value}</span></div>{f.sub && <div className="text-[10px] text-slate-500 text-right">{f.sub}</div>}<div className="h-1.5 rounded-full bg-ink-800 overflow-hidden mt-1"><div className="h-full rounded-full bg-brand-500" style={{ width: `${Math.max(6, 100 - i * 24)}%` }} /></div></div></li>
+          ))}</ul>
+        </Card></FadeUp>
+        <FadeUp delay={0.05}><Card title="Channel Mix" sub="by spend">
+          {chTot === 0 ? <div className="py-10 text-center text-[12px] text-slate-500">No spend data.</div> : (
+            <div className="flex items-center gap-4"><MultiDonut segments={data.channelMix.map((c, i) => ({ value: c.spend, color: CH_COLORS[i % CH_COLORS.length] }))} total={chTot} label="Spend" size={120} stroke={15} />
+              <ul className="space-y-1.5 flex-1 min-w-0">{data.channelMix.map((c, i) => <li key={c.label} className="flex items-center gap-2 text-[11px]"><span className="w-2 h-2 rounded-full shrink-0" style={{ background: CH_COLORS[i % CH_COLORS.length] }} /><span className="text-slate-400 flex-1 truncate">{c.label}</span><span className="text-white font-bold">{c.pct}%</span></li>)}</ul>
+            </div>
+          )}
+        </Card></FadeUp>
+        <FadeUp delay={0.1}><Card title="Campaign Status">
+          {stTot === 0 ? <div className="py-10 text-center text-[12px] text-slate-500">No campaigns.</div> : (
+            <div className="flex items-center gap-4"><MultiDonut segments={data.statusMix.map((s) => ({ value: s.count, color: ST_COLOR[s.label] || "#64748b" }))} total={stTot} label="Total" size={120} stroke={15} />
+              <ul className="space-y-1.5 flex-1 min-w-0">{data.statusMix.map((s) => <li key={s.label} className="flex items-center gap-2 text-[11px]"><span className="w-2 h-2 rounded-full shrink-0" style={{ background: ST_COLOR[s.label] || "#64748b" }} /><span className="text-slate-400 flex-1">{s.label}</span><span className="text-white font-bold">{s.count}</span></li>)}</ul>
+            </div>
+          )}
+        </Card></FadeUp>
+      </div>
+
+      <FadeUp><Card title={`All Campaigns (${data.campaigns.length})`}>
+        <div className="overflow-x-auto"><table className="w-full text-left min-w-[820px]">
+          <thead><tr className="text-[9px] uppercase tracking-wide text-slate-600 border-b border-ink-800"><th className="py-1.5 font-semibold">Campaign</th><th className="font-semibold">Platform</th><th className="font-semibold">Objective</th><th className="font-semibold">Status</th><th className="font-semibold text-right">Spend</th><th className="font-semibold text-right">Conv.</th><th className="font-semibold text-right">Revenue</th><th className="font-semibold text-right">ROAS</th></tr></thead>
+          <tbody>
+            {data.campaigns.map((c: AdCampaignRow) => (
+              <tr key={c.id} className="border-b border-ink-900">
+                <td className="py-2 text-[11px] font-semibold text-white truncate max-w-[200px]">{c.name}</td>
+                <td className="text-[10px]"><span className={`px-1.5 py-0.5 rounded font-bold ${c.platform === "Google" ? "bg-sky-500/15 text-sky-300" : "bg-brand-500/15 text-brand-300"}`}>{c.platform}</span></td>
+                <td className="text-[10px] text-slate-400 truncate max-w-[120px]">{c.objective || c.channel || "—"}</td>
+                <td className="text-[10px]"><span className={`px-1.5 py-0.5 rounded ${/ACTIVE|ENABLED/i.test(c.status) ? "bg-emerald-500/15 text-emerald-300" : /PAUSED/i.test(c.status) ? "bg-amber-500/15 text-amber-300" : "bg-slate-500/15 text-slate-400"}`}>{c.status || "—"}</span></td>
+                <td className="text-[10px] text-white text-right tabular-nums">{money(c.spend)}</td>
+                <td className="text-[10px] text-slate-300 text-right tabular-nums">{c.conversions}</td>
+                <td className="text-[10px] text-white text-right tabular-nums">{money(c.revenue)}</td>
+                <td className={`text-[10px] text-right tabular-nums font-bold ${c.roas >= 1 ? "text-emerald-400" : "text-rose-400"}`}>{c.roas}x</td>
+              </tr>
+            ))}
+            {data.campaigns.length === 0 && <tr><td colSpan={8} className="py-8 text-center text-[11px] text-slate-500">Connected, but no campaigns returned for the last 30 days.</td></tr>}
+          </tbody>
+        </table></div>
+      </Card></FadeUp>
+
+      <div className="flex items-center gap-1.5 text-[10px] text-slate-600"><Sparkles className="w-3 h-3" /> Live from your connected ad accounts — no demo data.</div>
+    </div>
+  );
+}
+
+/* ---------------- Content Ideas tab — REAL content briefs (no demo) ---------------- */
+const IDEA_AUDIENCE: Record<string, string> = {
+  Cars: "Tourists & Business", "Car Rental": "Tourists & Business",
+  Yachts: "Luxury Travelers", "Yacht Rental": "Luxury Travelers",
+  Activities: "Families & Couples", "Things To Do": "Families & Couples",
+  AirportTransfer: "First-time Visitors", "Airport Transfer": "First-time Visitors",
+  "Travel Guides": "All Visitors", General: "All Visitors",
+};
+const audienceOf = (c: string) => IDEA_AUDIENCE[c] || "All Visitors";
+const IDEA_STATUS: Record<string, string> = {
+  Draft: "bg-slate-500/15 text-slate-300", "In Progress": "bg-amber-500/15 text-amber-300",
+  "Awaiting Review": "bg-violet-500/15 text-violet-300", Approved: "bg-sky-500/15 text-sky-300",
+  Published: "bg-emerald-500/15 text-emerald-300",
+};
+const IDEA_CAT_COLORS = ["#8b5cf6", "#34d399", "#fbbf24", "#38bdf8", "#fb7185", "#a78bfa", "#f472b6"];
+const scoreColor = (s: number) => (s >= 85 ? "text-emerald-400" : s >= 70 ? "text-amber-400" : "text-rose-400");
+
+function ContentIdeasTab() {
+  const [board, setBoard] = useState<BriefBoard | null>(null);
+  const [items, setItems] = useState<BriefRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busyId, setBusyId] = useState("");
+  const [sub, setSub] = useState("All Ideas");
+  const [catF, setCatF] = useState("All Categories");
+  const [typeF, setTypeF] = useState("All Types");
+  const [statusF, setStatusF] = useState("All Status");
+  const [q, setQ] = useState("");
+  const [sel, setSel] = useState<BriefRow | null>(null);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const [b, l] = await Promise.all([getBriefBoard().catch(() => null), listBriefs({ limit: 100 }).catch(() => ({ items: [] as BriefRow[], total: 0, page: 1, pages: 1 }))]);
+      setBoard(b); setItems(l.items || []);
+    } finally { setLoading(false); }
+  };
+  useEffect(() => { load(); }, []);
+
+  const act = async (fn: () => Promise<unknown>, id: string) => { setBusyId(id); try { await fn(); if (sel?.id === id) setSel(null); await load(); } finally { setBusyId(""); } };
+
+  if (loading) return <div className="grid place-items-center py-24 text-slate-600"><Loader2 className="w-7 h-7 animate-spin" /></div>;
+
+  const SUBS = ["All Ideas", "High Potential", "In Progress", "Published", "Drafts"];
+  const subFilter = (b: BriefRow) =>
+    sub === "All Ideas" ? true : sub === "High Potential" ? b.priority === "High" : sub === "In Progress" ? b.status === "In Progress" : sub === "Published" ? b.status === "Published" : b.status === "Draft";
+  const filtered = items.filter(subFilter)
+    .filter((b) => (catF === "All Categories" ? true : b.category === catF))
+    .filter((b) => (typeF === "All Types" ? true : b.contentType === typeF))
+    .filter((b) => (statusF === "All Status" ? true : b.status === statusF))
+    .filter((b) => { const s = q.trim().toLowerCase(); return !s || b.title.toLowerCase().includes(s) || b.primaryKeyword.toLowerCase().includes(s); });
+
+  const total = items.length;
+  const kpis: { label: string; value: React.ReactNode; Icon: React.ElementType; color: string }[] = [
+    { label: "Total Ideas", value: total, Icon: Lightbulb, color: "#8b5cf6" },
+    { label: "High Potential", value: items.filter((b) => b.priority === "High").length, Icon: TrendingUp, color: "#fb7185" },
+    { label: "Sent to SEO", value: items.filter((b) => /seo/i.test(b.assignee)).length, Icon: Send, color: "#38bdf8" },
+    { label: "In Progress", value: board?.kpis.inProgress ?? items.filter((b) => b.status === "In Progress").length, Icon: Clock, color: "#fbbf24" },
+    { label: "Published", value: board?.kpis.published ?? items.filter((b) => b.status === "Published").length, Icon: CheckCircle2, color: "#34d399" },
+    { label: "Avg Impact Score", value: `${board?.avgQuality ?? 0}/100`, Icon: Target, color: "#a78bfa" },
+  ];
+
+  // Ideas by category (real)
+  const catMap: Record<string, number> = {}; items.forEach((b) => { catMap[b.category] = (catMap[b.category] || 0) + 1; });
+  const cats = Object.entries(catMap).map(([label, count]) => ({ label, count, pct: total ? Math.round((count / total) * 100) : 0 })).sort((a, b) => b.count - a.count);
+  const catTot = cats.reduce((s, c) => s + c.count, 0);
+  // Top audiences (derived from real category)
+  const audMap: Record<string, number> = {}; items.forEach((b) => { const a = audienceOf(b.category); audMap[a] = (audMap[a] || 0) + 1; });
+  const auds = Object.entries(audMap).map(([label, count]) => ({ label, count, pct: total ? Math.round((count / total) * 100) : 0 })).sort((a, b) => b.count - a.count);
+  // Content gaps (categories with ideas but few published)
+  const gapMap: Record<string, { total: number; pub: number }> = {}; items.forEach((b) => { const g = gapMap[b.category] || { total: 0, pub: 0 }; g.total++; if (b.status === "Published") g.pub++; gapMap[b.category] = g; });
+  const gaps = Object.entries(gapMap).map(([label, g]) => ({ label, gap: g.total - g.pub, total: g.total })).filter((g) => g.gap > 0).sort((a, b) => b.gap - a.gap).slice(0, 6);
+  const typeDist = board?.typeDist || [];
+
+  return (
+    <div className="space-y-5">
+      <div><h2 className="text-sm font-bold text-white">Content Ideas Overview</h2><p className="text-[11px] text-slate-500">Real content briefs — keyword-researched ideas the SEO Agent feeds the Copywriter.</p></div>
+
+      <Stagger className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
+        {kpis.map((c) => (
+          <Item key={c.label} className="rounded-2xl border border-ink-800 bg-ink-900/50 p-4">
+            <div className="flex items-center justify-between"><span className="text-[10px] text-slate-500 leading-tight">{c.label}</span><span className="w-7 h-7 rounded-lg bg-ink-800 grid place-items-center" style={{ color: c.color }}><c.Icon className="w-3.5 h-3.5" /></span></div>
+            <div className="mt-1.5 text-xl font-extrabold text-white">{c.value}</div>
+          </Item>
+        ))}
+      </Stagger>
+
+      <div className="grid grid-cols-1 xl:grid-cols-[1.6fr_1fr] gap-5">
+        <FadeUp>
+          <div className="rounded-2xl border border-ink-800 bg-ink-900/50">
+            <div className="flex items-center gap-1.5 px-4 pt-3 flex-wrap">
+              {SUBS.map((s) => <button key={s} onClick={() => setSub(s)} className={`px-3 h-8 rounded-lg text-[12px] font-semibold ${sub === s ? "bg-brand-600 text-white" : "text-slate-400 hover:text-white hover:bg-ink-800"}`}>{s}</button>)}
+            </div>
+            <div className="flex items-center gap-2 p-4 flex-wrap border-b border-ink-800">
+              <div className="relative flex-1 min-w-[150px]"><Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search content ideas…" className="w-full rounded-lg border border-ink-700 bg-ink-900 pl-8 pr-3 h-9 text-[12px] text-white placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-brand-500" /></div>
+              <select value={catF} onChange={(e) => setCatF(e.target.value)} className="rounded-lg border border-ink-700 bg-ink-900 h-9 px-2 text-[11px] text-slate-300 focus:outline-none"><option>All Categories</option>{(board?.categories || []).map((c) => <option key={c}>{c}</option>)}</select>
+              <select value={typeF} onChange={(e) => setTypeF(e.target.value)} className="rounded-lg border border-ink-700 bg-ink-900 h-9 px-2 text-[11px] text-slate-300 focus:outline-none"><option>All Types</option>{["Blog Post", "Guide", "Listicle", "Comparison", "Service Page", "Location Page"].map((t) => <option key={t}>{t}</option>)}</select>
+              <select value={statusF} onChange={(e) => setStatusF(e.target.value)} className="rounded-lg border border-ink-700 bg-ink-900 h-9 px-2 text-[11px] text-slate-300 focus:outline-none"><option>All Status</option>{["Draft", "In Progress", "Awaiting Review", "Approved", "Published"].map((s) => <option key={s}>{s}</option>)}</select>
+              <span className="text-[11px] text-slate-500 ml-auto">{filtered.length}</span>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left min-w-[720px]">
+                <thead><tr className="text-[9px] uppercase tracking-wide text-slate-600 border-b border-ink-800"><th className="py-2 pl-4 pr-3 font-semibold">Idea</th><th className="font-semibold">Category</th><th className="font-semibold">Type</th><th className="font-semibold">Audience</th><th className="font-semibold text-right">Impact</th><th className="font-semibold text-right">Search Vol.</th><th className="font-semibold">Status</th><th className="font-semibold pr-4"></th></tr></thead>
+                <tbody>
+                  {filtered.map((b) => (
+                    <tr key={b.id} onClick={() => setSel(b)} className="border-b border-ink-900 hover:bg-ink-900/40 cursor-pointer">
+                      <td className="py-2.5 pl-4 pr-3"><div className="text-[11px] font-semibold text-white truncate max-w-[220px]">{b.title}</div><div className="text-[9px] text-slate-600">{b.briefId || b.primaryKeyword}</div></td>
+                      <td className="text-[10px] text-slate-400">{b.category}</td>
+                      <td className="text-[10px]"><span className="px-1.5 py-0.5 rounded bg-ink-800 text-slate-300">{b.contentType}</span></td>
+                      <td className="text-[10px] text-slate-400 truncate max-w-[120px]">{audienceOf(b.category)}</td>
+                      <td className="text-right"><span className={`text-[11px] font-bold ${scoreColor(b.qualityScore)}`}>{b.qualityScore}</span></td>
+                      <td className="text-[10px] text-slate-300 text-right tabular-nums">{kfmt(b.searchVolume)}</td>
+                      <td><span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${IDEA_STATUS[b.status] || "bg-slate-500/15 text-slate-300"}`}>{b.status}</span></td>
+                      <td className="pr-4 text-right"><ArrowRight className="w-3.5 h-3.5 text-slate-600 inline" /></td>
+                    </tr>
+                  ))}
+                  {filtered.length === 0 && <tr><td colSpan={8} className="py-10 text-center text-[11px] text-slate-500">No content ideas match these filters.</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </FadeUp>
+
+        <div className="space-y-5">
+          <FadeUp><Card title="Ideas by Category">
+            {catTot === 0 ? <div className="py-8 text-center text-[11px] text-slate-500">No ideas yet.</div> : (
+              <div className="flex items-center gap-3"><MultiDonut segments={cats.map((c, i) => ({ value: c.count, color: IDEA_CAT_COLORS[i % IDEA_CAT_COLORS.length] }))} total={catTot} label="Ideas" size={110} stroke={14} />
+                <ul className="space-y-1 flex-1 min-w-0">{cats.map((c, i) => <li key={c.label} className="flex items-center gap-1.5 text-[10px]"><span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: IDEA_CAT_COLORS[i % IDEA_CAT_COLORS.length] }} /><span className="text-slate-400 flex-1 truncate">{c.label}</span><span className="text-white font-bold">{c.count}</span><span className="text-slate-600">{c.pct}%</span></li>)}</ul>
+              </div>
+            )}
+          </Card></FadeUp>
+          <FadeUp delay={0.05}><Card title="Ideas by Content Type">
+            <ul className="space-y-2">{typeDist.map((t) => <li key={t.label}><div className="flex items-center justify-between text-[10px] mb-1"><span className="text-slate-300">{t.label}</span><span className="text-white font-bold">{t.count} <span className="text-slate-600 font-normal">({t.pct}%)</span></span></div><div className="h-1.5 rounded-full bg-ink-800 overflow-hidden"><div className="h-full rounded-full" style={{ width: `${t.pct}%`, background: t.color }} /></div></li>)}{typeDist.length === 0 && <li className="text-[11px] text-slate-500 text-center py-3">No data.</li>}</ul>
+          </Card></FadeUp>
+          <FadeUp delay={0.1}><Card title="Top Target Audiences">
+            <ul className="space-y-1.5">{auds.map((a) => <li key={a.label} className="flex items-center gap-2 text-[11px]"><Users className="w-3 h-3 text-brand-400 shrink-0" /><span className="text-slate-300 flex-1 truncate">{a.label}</span><span className="text-white font-bold">{a.count}</span><span className="text-slate-600">{a.pct}%</span></li>)}{auds.length === 0 && <li className="text-[11px] text-slate-500 text-center py-3">No data.</li>}</ul>
+          </Card></FadeUp>
+          <FadeUp delay={0.15}><Card title="Content Gap Areas" sub="ideas not yet published">
+            <ul className="space-y-1.5">{gaps.map((g) => <li key={g.label} className="flex items-center justify-between text-[11px]"><span className="text-slate-300 truncate">{g.label}</span><span className="text-amber-300 font-bold">{g.gap} open</span></li>)}{gaps.length === 0 && <li className="text-[11px] text-emerald-400 text-center py-3">All caught up 🎉</li>}</ul>
+          </Card></FadeUp>
+        </div>
+      </div>
+
+      {sel && (
+        <div className="fixed inset-0 z-50 flex justify-end">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setSel(null)} />
+          <div className="relative w-full max-w-md h-full overflow-y-auto bg-ink-950 border-l border-ink-800 p-5 space-y-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap"><span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${IDEA_STATUS[sel.status]}`}>{sel.status}</span><span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${IMP[sel.priority]}`}>{sel.priority} Priority</span></div>
+                <h3 className="text-base font-bold text-white leading-snug mt-1.5">{sel.title}</h3>
+                <div className="text-[10px] text-slate-600 mt-0.5">{sel.briefId}</div>
+              </div>
+              <button onClick={() => setSel(null)} className="text-slate-500 hover:text-white shrink-0"><X className="w-4 h-4" /></button>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              {([["Impact", `${sel.qualityScore}`], ["Search Vol.", kfmt(sel.searchVolume)], ["KD", `${sel.keywordDifficulty}`]] as [string, string][]).map(([l, v]) => <div key={l} className="rounded-lg border border-ink-800 bg-ink-900/50 p-2.5 text-center"><div className="text-[13px] font-extrabold text-white">{v}</div><div className="text-[9px] text-slate-500 mt-0.5">{l}</div></div>)}
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              {([["Category", sel.category], ["Content Type", sel.contentType], ["Target Audience", audienceOf(sel.category)], ["Primary Keyword", sel.primaryKeyword || "—"], ["Assignee", sel.assignee], ["Target Words", String(sel.targetWordCount)]] as [string, string][]).map(([l, v]) => <div key={l} className="rounded-lg border border-ink-800 bg-ink-900/50 p-2"><div className="text-[10px] text-slate-500">{l}</div><div className="text-[11px] text-slate-200 font-semibold truncate mt-0.5">{v}</div></div>)}
+            </div>
+            {sel.description && <div className="rounded-lg border border-ink-800 bg-ink-900/50 p-3"><div className="text-[11px] font-bold text-white mb-1">Brief</div><p className="text-[12px] text-slate-300 leading-relaxed">{sel.description}</p></div>}
+            {sel.tags.length > 0 && <div className="flex flex-wrap gap-1">{sel.tags.map((t) => <span key={t} className="text-[10px] text-brand-200 bg-brand-500/10 border border-brand-500/30 rounded px-1.5 py-0.5">{t}</span>)}</div>}
+            <div className="space-y-2 pt-2 border-t border-ink-800">
+              <div className="text-[11px] font-bold text-white">Actions</div>
+              <div className="grid grid-cols-2 gap-2">
+                {sel.status !== "Published" && <button onClick={() => act(() => advanceBrief(sel.id), sel.id)} disabled={busyId === sel.id} className="inline-flex items-center justify-center gap-1.5 h-9 rounded-lg bg-gradient-to-r from-emerald-500 to-teal-600 text-white text-[12px] font-semibold disabled:opacity-50">{busyId === sel.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ArrowRight className="w-3.5 h-3.5" />} Advance Stage</button>}
+                <button onClick={() => act(() => updateBrief(sel.id, { assignee: "Copywriter Agent" }), sel.id)} disabled={busyId === sel.id} className="inline-flex items-center justify-center gap-1.5 h-9 rounded-lg border border-ink-700 text-slate-200 text-[12px] font-semibold hover:bg-ink-800 disabled:opacity-50"><PenLine className="w-3.5 h-3.5" /> To Copywriter</button>
+                <button onClick={() => act(() => updateBrief(sel.id, { assignee: "SEO Agent" }), sel.id)} disabled={busyId === sel.id} className="inline-flex items-center justify-center gap-1.5 h-9 rounded-lg border border-ink-700 text-slate-200 text-[12px] font-semibold hover:bg-ink-800 disabled:opacity-50"><Search className="w-3.5 h-3.5" /> To SEO</button>
+                <button onClick={() => act(() => deleteBrief(sel.id), sel.id)} disabled={busyId === sel.id} className="inline-flex items-center justify-center gap-1.5 h-9 rounded-lg border border-rose-500/40 text-rose-300 text-[12px] font-semibold hover:bg-rose-500/10 disabled:opacity-50"><Trash2 className="w-3.5 h-3.5" /> Delete</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ---------------- Recommendations tab — REAL strategy recs (no fabricated AED) ---------------- */
+type Rec = { id: string; title: string; category: string; impact: string; effort: string; confidence: number; status: string; traffic: number; why: string; actions: string[]; owner: string; path?: string };
+const REC_STATUS: Record<string, string> = { "In Progress": "bg-amber-500/15 text-amber-300", Planned: "bg-slate-500/15 text-slate-300", Outreach: "bg-violet-500/15 text-violet-300", Researching: "bg-sky-500/15 text-sky-300", Covered: "bg-emerald-500/15 text-emerald-300", Published: "bg-emerald-500/15 text-emerald-300" };
+const EFFORT: Record<string, string> = { High: "text-rose-300", Medium: "text-amber-300", Low: "text-emerald-300" };
+const REC_CAT_COLORS = ["#8b5cf6", "#34d399", "#fbbf24", "#38bdf8", "#fb7185", "#a78bfa"];
+const confOf = (p: string) => (p === "High" ? 90 : p === "Medium" ? 78 : 65);
+
+function RecommendationsTab() {
+  const [s, setS] = useState<StrategyData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [catF, setCatF] = useState("All");
+  const [sel, setSel] = useState<Rec | null>(null);
+  useEffect(() => { getStrategy().then(setS).catch(() => setS(null)).finally(() => setLoading(false)); }, []);
+
+  if (loading) return <div className="grid place-items-center py-24 text-slate-600"><Loader2 className="w-7 h-7 animate-spin" /></div>;
+  if (!s) return <div className="rounded-2xl border border-ink-800 bg-ink-900/50 p-8 text-center text-slate-500 text-[13px]">Couldn&apos;t load recommendations.</div>;
+
+  const recs: Rec[] = [];
+  (s.topOpportunities || []).forEach((o, i) => recs.push({ id: o.id || `top-${i}`, title: o.title, category: "Content & SEO", impact: o.impact, effort: o.effort || "Medium", confidence: o.confidence || confOf(o.impact), status: "In Progress", traffic: o.trafficPotential || 0, why: o.reason || o.detail || "", actions: o.plan || [], owner: o.agent || "SEO Agent", path: o.path }));
+  (s.contentOpps || []).forEach((c, i) => recs.push({ id: `content-${i}`, title: `Build a "${c.topic}" content cluster`, category: "Content & SEO", impact: c.priority, effort: "Medium", confidence: confOf(c.priority), status: c.status, traffic: c.potentialTraffic, why: `"${c.keyword}" has ~${kfmt(c.searchVolume)} monthly search demand.`, actions: ["Research target keywords", "Write the SEO brief", "Publish & internally link"], owner: c.assignedTo }));
+  (s.marketplaceOpps || []).filter((m) => m.potentialProviders > 0).forEach((m, i) => recs.push({ id: `mkt-${i}`, title: `Expand ${m.opportunity}`, category: "Categories", impact: m.priority, effort: "High", confidence: confOf(m.priority), status: m.status, traffic: 0, why: `${m.potentialProviders} more providers needed to cover demand in this category.`, actions: ["Discover providers", "Outreach via email/WhatsApp", "Onboard & verify"], owner: m.assignedTo }));
+  (s.competitiveOpps || []).forEach((c, i) => recs.push({ id: `comp-${i}`, title: c.opportunity, category: "Landing Pages", impact: c.impact, effort: "Medium", confidence: confOf(c.impact), status: "Planned", traffic: 0, why: `${c.competitorGap} vs competitors — ${c.action}.`, actions: [c.action], owner: "SEO Agent" }));
+
+  const cats = ["All", ...Array.from(new Set(recs.map((r) => r.category)))];
+  const filtered = catF === "All" ? recs : recs.filter((r) => r.category === catF);
+
+  const total = recs.length;
+  const highImpact = recs.filter((r) => r.impact === "High").length;
+  const inProgress = recs.filter((r) => r.status === "In Progress").length;
+  const implemented = recs.filter((r) => /Covered|Published|Implemented/.test(r.status)).length;
+  const avgConf = s.kpis?.avgConfidence || (total ? Math.round(recs.reduce((a, r) => a + r.confidence, 0) / total) : 0);
+  const totalTraffic = s.kpis?.trafficPotential || recs.reduce((a, r) => a + r.traffic, 0);
+
+  const kpis: { label: string; value: React.ReactNode; Icon: React.ElementType; color: string }[] = [
+    { label: "Total Recommendations", value: total, Icon: Lightbulb, color: "#8b5cf6" },
+    { label: "High Impact", value: highImpact, Icon: TrendingUp, color: "#fb7185" },
+    { label: "In Progress", value: inProgress, Icon: Clock, color: "#fbbf24" },
+    { label: "Implemented", value: implemented, Icon: CheckCircle2, color: "#34d399" },
+    { label: "Potential Traffic/mo", value: kfmt(totalTraffic), Icon: TrendingUp, color: "#38bdf8" },
+    { label: "Avg Confidence", value: `${avgConf}%`, Icon: Target, color: "#a78bfa" },
+  ];
+
+  const impacts = (["High", "Medium", "Low"] as const).map((label, i) => ({ label, count: recs.filter((r) => r.impact === label).length, color: ["#8b5cf6", "#38bdf8", "#34d399"][i] }));
+  const impTot = impacts.reduce((a, c) => a + c.count, 0);
+  const catAgg = cats.filter((c) => c !== "All").map((c) => ({ label: c, traffic: recs.filter((r) => r.category === c).reduce((a, r) => a + r.traffic, 0), count: recs.filter((r) => r.category === c).length })).sort((a, b) => b.count - a.count);
+
+  return (
+    <div className="space-y-5">
+      <div><h2 className="text-sm font-bold text-white">Recommendations Overview</h2><p className="text-[11px] text-slate-500">AI-powered recommendations to accelerate growth — grounded in real traffic, inventory &amp; SEO data.</p></div>
+
+      <Stagger className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
+        {kpis.map((c) => (
+          <Item key={c.label} className="rounded-2xl border border-ink-800 bg-ink-900/50 p-4">
+            <div className="flex items-center justify-between"><span className="text-[10px] text-slate-500 leading-tight">{c.label}</span><span className="w-7 h-7 rounded-lg bg-ink-800 grid place-items-center" style={{ color: c.color }}><c.Icon className="w-3.5 h-3.5" /></span></div>
+            <div className="mt-1.5 text-xl font-extrabold text-white">{c.value}</div>
+          </Item>
+        ))}
+      </Stagger>
+
+      <div className="flex items-center gap-1.5 flex-wrap">
+        {cats.map((c) => <button key={c} onClick={() => setCatF(c)} className={`px-3 h-8 rounded-lg text-[12px] font-semibold ${catF === c ? "bg-brand-600 text-white" : "border border-ink-700 text-slate-400 hover:text-white hover:bg-ink-800"}`}>{c}</button>)}
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-[1.6fr_1fr] gap-5">
+        <FadeUp>
+          <div className="rounded-2xl border border-ink-800 bg-ink-900/50 overflow-x-auto">
+            <table className="w-full text-left min-w-[720px]">
+              <thead><tr className="text-[9px] uppercase tracking-wide text-slate-600 border-b border-ink-800"><th className="py-2 pl-4 pr-3 font-semibold">Recommendation</th><th className="font-semibold">Category</th><th className="font-semibold">Impact</th><th className="font-semibold">Effort</th><th className="font-semibold text-right">Confidence</th><th className="font-semibold">Status</th><th className="font-semibold text-right">Potential/mo</th><th className="font-semibold pr-4"></th></tr></thead>
+              <tbody>
+                {filtered.map((r) => (
+                  <tr key={r.id} onClick={() => setSel(r)} className="border-b border-ink-900 hover:bg-ink-900/40 cursor-pointer">
+                    <td className="py-2.5 pl-4 pr-3"><div className="text-[11px] font-semibold text-white truncate max-w-[240px]">{r.title}</div><div className="text-[9px] text-slate-600 truncate max-w-[240px]">{r.why}</div></td>
+                    <td className="text-[10px] text-slate-400 whitespace-nowrap">{r.category}</td>
+                    <td><span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${IMP[r.impact]}`}>{r.impact}</span></td>
+                    <td className={`text-[10px] font-semibold ${EFFORT[r.effort] || "text-slate-400"}`}>{r.effort}</td>
+                    <td className="text-right text-[11px] font-bold text-white tabular-nums">{r.confidence}%</td>
+                    <td><span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${REC_STATUS[r.status] || "bg-slate-500/15 text-slate-300"}`}>{r.status}</span></td>
+                    <td className="text-[10px] text-slate-300 text-right tabular-nums">{r.traffic > 0 ? kfmt(r.traffic) : "—"}</td>
+                    <td className="pr-4 text-right"><ArrowRight className="w-3.5 h-3.5 text-slate-600 inline" /></td>
+                  </tr>
+                ))}
+                {filtered.length === 0 && <tr><td colSpan={8} className="py-10 text-center text-[11px] text-slate-500">No recommendations in this category.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </FadeUp>
+
+        <div className="space-y-5">
+          <FadeUp><Card title="Recommendations by Impact">
+            {impTot === 0 ? <div className="py-8 text-center text-[11px] text-slate-500">No data.</div> : (
+              <div className="flex items-center gap-3"><MultiDonut segments={impacts.map((im) => ({ value: im.count, color: im.color }))} total={impTot} label="Recs" size={110} stroke={14} />
+                <ul className="space-y-1.5 flex-1 min-w-0">{impacts.map((im) => <li key={im.label} className="flex items-center gap-2 text-[11px]"><span className="w-2 h-2 rounded-full shrink-0" style={{ background: im.color }} /><span className="text-slate-400 flex-1">{im.label} Impact</span><span className="text-white font-bold">{im.count}</span><span className="text-slate-600">{impTot ? Math.round((im.count / impTot) * 100) : 0}%</span></li>)}</ul>
+              </div>
+            )}
+          </Card></FadeUp>
+          <FadeUp delay={0.05}><Card title="Top Opportunities by Category" sub="by traffic potential">
+            <ul className="space-y-2">{catAgg.map((c, i) => { const max = Math.max(1, ...catAgg.map((x) => x.traffic || x.count)); const v = c.traffic || c.count; return <li key={c.label}><div className="flex items-center justify-between text-[10px] mb-1"><span className="text-slate-300">{c.label}</span><span className="text-white font-bold">{c.traffic > 0 ? `${kfmt(c.traffic)}/mo` : `${c.count} recs`}</span></div><div className="h-1.5 rounded-full bg-ink-800 overflow-hidden"><div className="h-full rounded-full" style={{ width: `${(v / max) * 100}%`, background: REC_CAT_COLORS[i % REC_CAT_COLORS.length] }} /></div></li>; })}</ul>
+          </Card></FadeUp>
+          <FadeUp delay={0.1}><Card title="Strategic Recommendations" right={<ViewAll />}>
+            <ul className="space-y-2">{(s.recommendations || []).slice(0, 4).map((r, i) => <li key={i} className="rounded-lg border border-ink-800 bg-ink-950/40 p-2.5"><div className="flex items-start justify-between gap-2"><span className="text-[11px] font-semibold text-white leading-tight">{r.title}</span><span className={`text-[8px] font-bold px-1.5 py-0.5 rounded shrink-0 ${IMP[r.impact] || "bg-slate-500/15 text-slate-300"}`}>{r.impact}</span></div><p className="text-[10px] text-slate-500 mt-1 leading-snug">{r.body}</p></li>)}{(s.recommendations || []).length === 0 && <li className="text-[11px] text-slate-500 text-center py-3">No strategic recommendations yet.</li>}</ul>
+          </Card></FadeUp>
+        </div>
+      </div>
+
+      {sel && (
+        <div className="fixed inset-0 z-50 flex justify-end">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setSel(null)} />
+          <div className="relative w-full max-w-md h-full overflow-y-auto bg-ink-950 border-l border-ink-800 p-5 space-y-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0"><div className="flex items-center gap-2 flex-wrap"><span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${IMP[sel.impact]}`}>{sel.impact} Impact</span><span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-ink-800 text-slate-300">{sel.category}</span></div><h3 className="text-base font-bold text-white leading-snug mt-1.5">{sel.title}</h3></div>
+              <button onClick={() => setSel(null)} className="text-slate-500 hover:text-white shrink-0"><X className="w-4 h-4" /></button>
+            </div>
+            {sel.why && <div className="rounded-lg border border-ink-800 bg-ink-900/50 p-3"><div className="text-[11px] font-bold text-white mb-1">Why this recommendation</div><p className="text-[12px] text-slate-300 leading-relaxed">{sel.why}</p></div>}
+            <div className="grid grid-cols-3 gap-2">
+              {([["Est. Traffic", sel.traffic > 0 ? `${kfmt(sel.traffic)}/mo` : "—"], ["Confidence", `${sel.confidence}%`], ["Effort", sel.effort]] as [string, string][]).map(([l, v]) => <div key={l} className="rounded-lg border border-ink-800 bg-ink-900/50 p-2.5 text-center"><div className="text-[13px] font-extrabold text-white">{v}</div><div className="text-[9px] text-slate-500 mt-0.5">{l}</div></div>)}
+            </div>
+            {sel.actions.length > 0 && <div><div className="text-[11px] font-bold text-white mb-1.5">Recommended Actions</div><ul className="space-y-1.5">{sel.actions.map((a, i) => <li key={i} className="flex items-start gap-2 text-[11px] text-slate-300"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 mt-0.5 shrink-0" />{a}</li>)}</ul></div>}
+            <div className="grid grid-cols-2 gap-2">
+              {([["Owner", sel.owner], ["Status", sel.status]] as [string, string][]).map(([l, v]) => <div key={l} className="rounded-lg border border-ink-800 bg-ink-900/50 p-2"><div className="text-[10px] text-slate-500">{l}</div><div className="text-[11px] text-slate-200 font-semibold truncate mt-0.5">{v}</div></div>)}
+            </div>
+            {sel.path && <a href={`${(process.env.NEXT_PUBLIC_SITE_URL || "https://tripreview.ae").replace(/\/+$/, "")}/en${sel.path === "/" ? "" : sel.path}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-brand-400 hover:underline"><Globe className="w-3.5 h-3.5" /> View affected page <ArrowRight className="w-3 h-3" /></a>}
+          </div>
+        </div>
+      )}
+      <div className="flex items-center gap-1.5 text-[10px] text-slate-600"><Sparkles className="w-3 h-3" /> Recommendations are computed from real traffic, inventory &amp; SEO signals — no demo, no fabricated revenue.</div>
+    </div>
+  );
+}
+
+/* ---------------- Agent Collaboration tab — REAL cross-agent work (no demo) ---------------- */
+const COLLAB_COLORS = ["#8b5cf6", "#34d399", "#fbbf24", "#38bdf8", "#fb7185", "#a78bfa"];
+const prettyAct = (a?: string) => String(a || "").replace(/^agent\./, "").replace(/\./g, " · ").replace(/_/g, " ");
+function InitialBadge({ name }: { name: string }) {
+  const n = (name || "?").trim();
+  return <span className="w-6 h-6 rounded-lg bg-brand-600/15 text-brand-300 grid place-items-center text-[9px] font-bold shrink-0">{(n.charAt(0) || "?").toUpperCase()}</span>;
+}
+
+function AgentCollaborationTab() {
+  const [wf, setWf] = useState<Workforce | null>(null);
+  const [acts, setActs] = useState<Activity[]>([]);
+  const [briefs, setBriefs] = useState<BriefRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    Promise.all([getWorkforce().catch(() => null), getActivity(30).then((r) => r.activities).catch(() => []), listBriefs({ limit: 100 }).then((r) => r.items).catch(() => [] as BriefRow[])])
+      .then(([w, a, b]) => { setWf(w); setActs(a || []); setBriefs(b || []); }).finally(() => setLoading(false));
+  }, []);
+
+  if (loading) return <div className="grid place-items-center py-24 text-slate-600"><Loader2 className="w-7 h-7 animate-spin" /></div>;
+
+  const agents: WfAgent[] = wf?.agents ?? [];
+  const nameOf = (a: WfAgent) => a.name ?? a.id;
+  // Real collaborations = content briefs handed between two different agents.
+  const collabs = briefs.filter((b) => b.createdByAgent && b.assignee && b.createdByAgent !== b.assignee)
+    .map((b) => ({ id: b.id, initiatedBy: b.createdByAgent, withAgent: b.assignee, project: b.title, purpose: `${b.contentType} · ${b.category}`, status: b.status, lastActivity: b.updatedAt }));
+  const active = collabs.filter((c) => c.status === "In Progress" || c.status === "Awaiting Review");
+  const handedOff = collabs.length;
+  const tasksCompleted = agents.reduce((s, a) => s + (a.tasksCompleted || 0), 0);
+  const liveAgents = agents.filter((a) => a.live);
+  const successRate = liveAgents.length ? Math.round(liveAgents.reduce((s, a) => s + (a.successRate || 0), 0) / liveAgents.length) : 0;
+  const knowledgeShared = acts.length;
+
+  const kpis: { label: string; value: React.ReactNode; Icon: React.ElementType; color: string }[] = [
+    { label: "Active Collaborations", value: active.length, Icon: Users, color: "#8b5cf6" },
+    { label: "Tasks Handed Off", value: handedOff, Icon: Send, color: "#38bdf8" },
+    { label: "Tasks Completed", value: tasksCompleted, Icon: CheckCircle2, color: "#34d399" },
+    { label: "Collaboration Success", value: `${successRate}%`, Icon: Target, color: "#a78bfa" },
+    { label: "Knowledge Shared", value: knowledgeShared, Icon: Share2, color: "#fbbf24" },
+    { label: "Live Agents", value: wf?.summary.live ?? liveAgents.length, Icon: Zap, color: "#fb7185" },
+  ];
+
+  // Tasks by agent (real completed counts)
+  const ranked = [...agents].filter((a) => (a.tasksCompleted || 0) > 0).sort((a, b) => (b.tasksCompleted || 0) - (a.tasksCompleted || 0));
+  const top5 = ranked.slice(0, 5);
+  const otherTasks = ranked.slice(5).reduce((s, a) => s + (a.tasksCompleted || 0), 0);
+  const taskSegs = [...top5.map((a, i) => ({ label: nameOf(a), value: a.tasksCompleted || 0, color: COLLAB_COLORS[i % COLLAB_COLORS.length] })), ...(otherTasks > 0 ? [{ label: "Other Agents", value: otherTasks, color: "#64748b" }] : [])];
+  const taskTot = taskSegs.reduce((s, x) => s + x.value, 0);
+
+  const perf = ranked.slice(0, 6);
+  const WORKFLOW = [
+    { step: "Identify Opportunity", by: "Marketing Director", Icon: Target },
+    { step: "Assign to Agent", by: "Based on expertise", Icon: Users },
+    { step: "Agent Execution", by: "Research & create", Icon: PenLine },
+    { step: "Review & Refine", by: "Feedback loop", Icon: CheckCircle2 },
+    { step: "Implement & Monitor", by: "Track performance", Icon: BarChart3 },
+  ];
+  const upcoming = briefs.filter((b) => b.status !== "Published").slice(0, 5);
+
+  return (
+    <div className="space-y-5">
+      <div><h2 className="text-sm font-bold text-white">Agent Collaboration</h2><p className="text-[11px] text-slate-500">Real cross-agent work — handoffs, activity &amp; contribution across the AI team.</p></div>
+
+      <Stagger className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
+        {kpis.map((c) => (
+          <Item key={c.label} className="rounded-2xl border border-ink-800 bg-ink-900/50 p-4">
+            <div className="flex items-center justify-between"><span className="text-[10px] text-slate-500 leading-tight">{c.label}</span><span className="w-7 h-7 rounded-lg bg-ink-800 grid place-items-center" style={{ color: c.color }}><c.Icon className="w-3.5 h-3.5" /></span></div>
+            <div className="mt-1.5 text-xl font-extrabold text-white">{c.value}</div>
+          </Item>
+        ))}
+      </Stagger>
+
+      <div className="grid grid-cols-1 xl:grid-cols-[1.6fr_1fr] gap-5">
+        <FadeUp>
+          <Card title="Active Collaborations" right={<span className="text-[10px] text-slate-500">{collabs.length} handoffs</span>}>
+            <div className="overflow-x-auto"><table className="w-full text-left min-w-[560px]">
+              <thead><tr className="text-[9px] uppercase tracking-wide text-slate-600 border-b border-ink-800"><th className="py-1.5 font-semibold">Initiated By</th><th className="font-semibold">With</th><th className="font-semibold">Project</th><th className="font-semibold">Status</th><th className="font-semibold text-right">Last Activity</th></tr></thead>
+              <tbody>
+                {collabs.slice(0, 8).map((c) => (
+                  <tr key={c.id} className="border-b border-ink-900">
+                    <td className="py-2"><span className="inline-flex items-center gap-1.5 text-[11px] text-slate-300"><InitialBadge name={c.initiatedBy} />{c.initiatedBy.replace(" Agent", "")}</span></td>
+                    <td><span className="inline-flex items-center gap-1.5 text-[11px] text-slate-300"><InitialBadge name={c.withAgent} />{c.withAgent.replace(" Agent", "")}</span></td>
+                    <td className="text-[11px] text-white font-semibold truncate max-w-[160px]">{c.project}</td>
+                    <td><span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${REC_STATUS[c.status] || IDEA_STATUS[c.status] || "bg-slate-500/15 text-slate-300"}`}>{c.status}</span></td>
+                    <td className="text-[10px] text-slate-500 text-right whitespace-nowrap">{new Date(c.lastActivity).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</td>
+                  </tr>
+                ))}
+                {collabs.length === 0 && <tr><td colSpan={5} className="py-8 text-center text-[11px] text-slate-500">No cross-agent handoffs yet.</td></tr>}
+              </tbody>
+            </table></div>
+          </Card>
+        </FadeUp>
+
+        <div className="space-y-5">
+          <FadeUp><Card title="Collaboration Workflow">
+            <ul className="space-y-2.5">{WORKFLOW.map((w, i) => (
+              <li key={w.step} className="flex items-center gap-2.5"><span className="w-7 h-7 rounded-lg bg-brand-600/15 text-brand-300 grid place-items-center shrink-0"><w.Icon className="w-3.5 h-3.5" /></span><div className="min-w-0 flex-1"><div className="text-[11px] font-semibold text-white leading-tight">{i + 1}. {w.step}</div><div className="text-[9px] text-slate-500">{w.by}</div></div></li>
+            ))}</ul>
+          </Card></FadeUp>
+          <FadeUp delay={0.05}><Card title="Tasks by Agent" sub="completed">
+            {taskTot === 0 ? <div className="py-8 text-center text-[11px] text-slate-500">No completed tasks yet.</div> : (
+              <div className="flex items-center gap-3"><MultiDonut segments={taskSegs.map((s) => ({ value: s.value, color: s.color }))} total={taskTot} label="Tasks" size={110} stroke={14} />
+                <ul className="space-y-1 flex-1 min-w-0">{taskSegs.map((s) => <li key={s.label} className="flex items-center gap-1.5 text-[10px]"><span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: s.color }} /><span className="text-slate-400 flex-1 truncate">{s.label.replace(" Agent", "")}</span><span className="text-white font-bold">{s.value}</span><span className="text-slate-600">{Math.round((s.value / taskTot) * 100)}%</span></li>)}</ul>
+              </div>
+            )}
+          </Card></FadeUp>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
+        <FadeUp><Card title="Communication Feed" right={<span className="text-[10px] text-slate-500">live</span>}>
+          <ul className="space-y-2.5 max-h-[280px] overflow-y-auto scrollbar-thin">
+            {acts.length === 0 && <li className="text-[11px] text-slate-500 text-center py-4">No recent activity.</li>}
+            {acts.slice(0, 10).map((a, i) => (
+              <li key={a.id || i} className="flex items-start gap-2.5"><InitialBadge name={a.actorName || "Agent"} /><div className="min-w-0 flex-1"><div className="text-[11px] text-slate-200 leading-snug"><span className="font-semibold text-white">{a.actorName || "Agent"}</span> · {prettyAct(a.action)}</div>{a.entityLabel && <div className="text-[10px] text-slate-500 truncate">{a.entityLabel}</div>}<div className="text-[9px] text-slate-600">{a.createdAt ? new Date(a.createdAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : ""}</div></div></li>
+            ))}
+          </ul>
+        </Card></FadeUp>
+
+        <FadeUp delay={0.05}><Card title="Upcoming Handoffs">
+          <ul className="space-y-2">
+            {upcoming.length === 0 && <li className="text-[11px] text-slate-500 text-center py-4">Nothing pending.</li>}
+            {upcoming.map((b) => (
+              <li key={b.id} className="rounded-lg border border-ink-800 bg-ink-950/40 p-2.5"><div className="text-[11px] font-semibold text-white truncate">{b.title}</div><div className="flex items-center gap-1.5 mt-1 text-[10px] text-slate-500"><span className="text-slate-400">{b.createdByAgent.replace(" Agent", "")}</span><ArrowRight className="w-3 h-3" /><span className="text-slate-400">{b.assignee.replace(" Agent", "")}</span><span className={`ml-auto text-[8px] font-bold px-1.5 py-0.5 rounded ${IDEA_STATUS[b.status] || "bg-slate-500/15 text-slate-300"}`}>{b.status}</span></div></li>
+            ))}
+          </ul>
+        </Card></FadeUp>
+
+        <FadeUp delay={0.1}><Card title="Agent Performance Contribution">
+          <div className="overflow-x-auto"><table className="w-full text-left">
+            <thead><tr className="text-[9px] uppercase tracking-wide text-slate-600 border-b border-ink-800"><th className="py-1.5 font-semibold">Agent</th><th className="font-semibold text-right">Tasks</th><th className="font-semibold text-right">Success</th><th className="font-semibold text-right">Share</th></tr></thead>
+            <tbody>
+              {perf.length === 0 && <tr><td colSpan={4} className="py-6 text-center text-[11px] text-slate-500">No agent activity.</td></tr>}
+              {perf.map((a) => <tr key={a.id} className="border-b border-ink-900"><td className="py-2"><span className="inline-flex items-center gap-1.5 text-[11px] text-slate-300"><InitialBadge name={nameOf(a)} />{nameOf(a).replace(" Agent", "")}</span></td><td className="text-[11px] font-bold text-white text-right">{a.tasksCompleted}</td><td className="text-[10px] text-emerald-400 text-right font-semibold">{a.successRate}%</td><td className="text-[10px] text-slate-400 text-right">{tasksCompleted ? Math.round(((a.tasksCompleted || 0) / tasksCompleted) * 100) : 0}%</td></tr>)}
+            </tbody>
+          </table></div>
+        </Card></FadeUp>
+      </div>
+
+      <div className="flex items-center gap-1.5 text-[10px] text-slate-600"><Sparkles className="w-3 h-3" /> Collaboration data is computed live from real agent activity, handoffs &amp; task completion — no demo data.</div>
+    </div>
   );
 }

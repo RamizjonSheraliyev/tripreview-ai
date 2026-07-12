@@ -9,6 +9,7 @@ import {
   Bookmark, ExternalLink, Download, FileEdit, Layers, Zap, Send, Link2 as LinkIcon, Pause, Play, Trash2, Calendar, Mail,
 } from "lucide-react";
 import Sidebar from "@/components/Sidebar";
+import AgentGate from "@/components/AgentGate";
 import { FadeUp, Stagger, Item, motion } from "@/components/motion";
 import {
   fetchMe, getStoredUser, getCompetitiveOverview, ciScan, getCompetitiveBriefing, getCompetitors, ciAddCompetitor, getContentIntelligence, ciScanContent, getPageOpportunities, getBacklinkIntel,
@@ -69,6 +70,7 @@ export default function CompetitivePage() {
   return (
     <div className="flex min-h-screen bg-ink-950 text-slate-200">
       <Sidebar />
+        <AgentGate agentId="intel" label="Competitive Intelligence" accent="from-rose-500 to-red-600" />
       <main className="flex-1 min-w-0">
         {note && <div className="fixed top-4 right-4 z-[80] rounded-xl border border-brand-500/40 bg-ink-900 px-4 py-2.5 text-[12px] text-brand-100 shadow-2xl max-w-md">{note}</div>}
         {scanOpen && <ScanModal onClose={() => setScanOpen(false)} flash={flash} onDone={load} />}

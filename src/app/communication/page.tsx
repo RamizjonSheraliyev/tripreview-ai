@@ -7,12 +7,15 @@ import {
   Sparkles, MessageSquare, Loader2, RefreshCw, Bell, Users, AlertTriangle, FileText,
   CheckCircle2, X, GitBranch, Globe, Wand2, ChevronDown, Paperclip, Plus, MoreHorizontal,
   Mail, Calendar, Eye, Award, AtSign, Clock, Zap, Download, Copy, Trash2, Smartphone, FileText as FileIcon,
+  Mic, Volume2, VolumeX,
 } from "lucide-react";
 import Sidebar from "@/components/Sidebar";
 import { FadeUp, motion } from "@/components/motion";
 import { AGENTS, type AgentDef } from "@/lib/agents";
+import { speakReply, stopSpeaking, sttSupported, createRecognizer } from "@/lib/voice";
 import {
   fetchMe, getStoredUser, getWorkforce, getTeam, agentChat, getCeoOrchestration,
+  getAgentToggles, setAgentEnabled,
   chatHistoryApi, chatSendApi, chatActApi, type ChatMsg, type ChatCard,
   listAnnouncements, getAnnouncement, getAnnouncementStats, createAnnouncement, updateAnnouncement, deleteAnnouncement,
   getWorkflows,
@@ -154,19 +157,42 @@ function TaskCard({ msg, busy, onAct }: { msg: Msg; busy: boolean; onAct: (d: "a
   );
 }
 
-function ChatInput({ members, busy, mentionId, setMentionId, onSend, statusOf, placeholder, seed }: {
+function ChatInput({ members, busy, mentionId, setMentionId, onSend, statusOf, placeholder, seed, voiceOut, onToggleVoiceOut }: {
   members: AgentDef[]; busy: boolean; mentionId: string; setMentionId: (id: string) => void;
   onSend: (text: string, img: ImgAtt | null) => void; statusOf?: (id: string) => string; placeholder?: string;
-  seed?: { text: string; key: string };
+  seed?: { text: string; key: string }; voiceOut?: boolean; onToggleVoiceOut?: () => void;
 }) {
   const [text, setText] = useState(seed?.text || "");
   const [img, setImg] = useState<ImgAtt | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [listening, setListening] = useState(false);
+  const [canSTT, setCanSTT] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const recRef = useRef<{ start: () => void; stop: () => void } | null>(null);
+  const baseRef = useRef("");
   const seedKey = seed?.key;
   useEffect(() => { if (seedKey !== undefined) setText(seed?.text || ""); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [seedKey]);
-  const submit = () => { if ((!text.trim() && !img) || busy) return; onSend(text.trim(), img); setText(""); setImg(null); };
+  useEffect(() => { setCanSTT(sttSupported()); }, []);
+  const submitText = (val: string) => { const t = val.trim(); if ((!t && !img) || busy) return; onSend(t, img); setText(""); setImg(null); };
+  const submit = () => submitText(text);
   const attach = async (f: File | null) => { if (!f) return; try { setImg(await fileToImg(f)); } catch { /* ignore */ } };
+
+  // Push-to-talk dictation. Speak → live transcript fills the box → auto-sends
+  // on the final result. Click again to stop early.
+  const toggleMic = () => {
+    if (listening) { recRef.current?.stop(); return; }
+    baseRef.current = text ? text + " " : "";
+    const rec = createRecognizer({
+      onStart: () => setListening(true),
+      onInterim: (s) => setText(baseRef.current + s),
+      onFinal: (s) => { const full = baseRef.current + s; setText(full); setTimeout(() => submitText(full), 120); },
+      onEnd: () => setListening(false),
+      onError: () => setListening(false),
+    });
+    if (!rec) return;
+    recRef.current = rec;
+    rec.start();
+  };
 
   return (
     <div className="border-t border-ink-800 p-3 shrink-0 relative">
@@ -188,8 +214,20 @@ function ChatInput({ members, busy, mentionId, setMentionId, onSend, statusOf, p
         <input ref={fileRef} type="file" accept="image/*" hidden onChange={(e) => attach(e.target.files?.[0] || null)} />
         <button type="button" onClick={() => fileRef.current?.click()} title="Attach image" className="w-8 h-8 grid place-items-center rounded-lg text-slate-500 hover:text-slate-300"><Paperclip className="w-4 h-4" /></button>
         <button type="button" onClick={() => setPickerOpen((v) => !v)} title="Mention an agent" className={`w-8 h-8 grid place-items-center rounded-lg ${pickerOpen ? "text-brand-300 bg-brand-500/10" : "text-slate-500 hover:text-slate-300"}`}><AtSign className="w-4 h-4" /></button>
+        {canSTT && (
+          <button type="button" onClick={toggleMic} title={listening ? "Stop listening" : "Speak your message"} className={`w-8 h-8 grid place-items-center rounded-lg relative ${listening ? "text-white bg-rose-500" : "text-slate-500 hover:text-slate-300"}`}>
+            <Mic className="w-4 h-4" />
+            {listening && <span className="absolute inset-0 rounded-lg ring-2 ring-rose-400 animate-ping" />}
+          </button>
+        )}
+        {onToggleVoiceOut && (
+          <button type="button" onClick={onToggleVoiceOut} title={voiceOut ? "Voice replies: on (click to mute)" : "Voice replies: off (click to hear agents)"} className={`w-8 h-8 grid place-items-center rounded-lg ${voiceOut ? "text-emerald-300 bg-emerald-500/10" : "text-slate-500 hover:text-slate-300"}`}>
+            {voiceOut ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+          </button>
+        )}
         <button type="submit" disabled={busy || (!text.trim() && !img)} className="inline-flex items-center gap-1.5 px-4 h-9 rounded-lg bg-gradient-to-r from-brand-500 to-violet-600 text-white text-sm font-semibold disabled:opacity-50 shrink-0"><Send className="w-4 h-4" /> Send</button>
       </form>
+      {listening && <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-rose-300"><span className="w-1.5 h-1.5 rounded-full bg-rose-400 animate-pulse" /> Listening… speak now</div>}
     </div>
   );
 }
@@ -317,6 +355,15 @@ function GroupChat({ wf }: { wf: Workforce | null; group: boolean }) {
   const statusOf = (id: string) => wfA(id)?.status || "Idle";
   const today = new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
   const activeCount = wf?.summary.active ?? 0;
+  const [voiceOut, setVoiceOut] = useState(false);
+  // Agent master switches (OFF by default → token saving). Flip on to activate.
+  const [enabled, setEnabled] = useState<Record<string, boolean>>({});
+  const [togBusy, setTogBusy] = useState("");
+  useEffect(() => { getAgentToggles().then((r) => setEnabled(r.enabled || {})).catch(() => {}); }, []);
+  const toggleAgent = async (id: string) => {
+    const next = !enabled[id]; setTogBusy(id); setEnabled((e) => ({ ...e, [id]: next }));
+    try { await setAgentEnabled(id, next); } catch { setEnabled((e) => ({ ...e, [id]: !next })); } finally { setTogBusy(""); }
+  };
 
   const send = async (text: string, mention: string, img: ImgAtt | null) => {
     const t = text.trim();
@@ -327,6 +374,7 @@ function GroupChat({ wf }: { wf: Workforce | null; group: boolean }) {
       const history: AgentChatTurn[] = msgs.slice(-10).map((m) => ({ role: m.role, name: m.name, text: m.text }));
       const r = await chatSendApi(t || "Analyze this image.", { history, mentionId: mention, imageBase64: img?.base64, imageType: img?.type });
       setMsgs((m) => [...m, ...r.messages.map((sm) => fromServer(sm, MID++))]);
+      if (voiceOut) { const spoken = r.messages.filter((x) => x.role === "agent").map((x) => x.text).join(". "); if (spoken) speakReply(spoken); }
     } catch {
       setMsgs((m) => [...m, { id: MID++, role: "agent", agentId: "ceo", name: "AI CEO / Orchestrator", text: "Couldn't reach the team right now — check the backend.", ts: Date.now() }]);
     } finally { setBusy(false); }
@@ -438,7 +486,7 @@ function GroupChat({ wf }: { wf: Workforce | null; group: boolean }) {
           <div ref={endRef} />
         </div>
 
-        <ChatInput members={members} busy={busy} mentionId={to} setMentionId={setTo} statusOf={statusOf} seed={seed} onSend={(text, img) => send(text, to, img)} placeholder="Type a message… (auto-routes to the right agent)" />
+        <ChatInput members={members} busy={busy} mentionId={to} setMentionId={setTo} statusOf={statusOf} seed={seed} onSend={(text, img) => send(text, to, img)} placeholder="Type a message… (auto-routes to the right agent)" voiceOut={voiceOut} onToggleVoiceOut={() => setVoiceOut((v) => { if (v) stopSpeaking(); return !v; })} />
       </section>
 
       {/* ===== RIGHT: overview + announcements + quick actions ===== */}
@@ -452,8 +500,10 @@ function GroupChat({ wf }: { wf: Workforce | null; group: boolean }) {
               ))}
             </div>
             <ul className="space-y-1.5">
-              {members.map((a) => { const Icon = AGENT_ICONS[a.icon] || Sparkles; const on = statusOf(a.id) === "Active";
-                return <li key={a.id} className="flex items-center gap-2"><span className="w-6 h-6 rounded-lg bg-brand-600/15 text-brand-300 grid place-items-center shrink-0"><Icon className="w-3 h-3" /></span><span className="text-[11px] text-slate-300 flex-1 truncate">{a.name}</span><span className={`inline-flex items-center gap-1 text-[10px] ${on ? "text-emerald-400" : "text-slate-500"}`}><span className={`w-1.5 h-1.5 rounded-full ${on ? "bg-emerald-400" : "bg-slate-600"}`} />{a.live ? statusOf(a.id) : "—"}</span></li>;
+              {members.map((a) => { const Icon = AGENT_ICONS[a.icon] || Sparkles; const on = !!enabled[a.id];
+                return <li key={a.id} className="flex items-center gap-2"><span className={`w-6 h-6 rounded-lg grid place-items-center shrink-0 ${on ? "bg-emerald-500/15 text-emerald-300" : "bg-ink-800 text-slate-500"}`}><Icon className="w-3 h-3" /></span><span className="text-[11px] text-slate-300 flex-1 truncate">{a.name}</span><span className={`text-[9px] ${on ? "text-emerald-400" : "text-slate-500"}`}>{on ? "On" : "Off"}</span>
+                  <button onClick={() => toggleAgent(a.id)} disabled={togBusy === a.id} role="switch" aria-checked={on} title={on ? "Switch off" : "Switch on"} className={`relative w-8 h-[18px] rounded-full transition-colors shrink-0 disabled:opacity-50 ${on ? "bg-emerald-500" : "bg-ink-700"}`}><span className={`absolute top-0.5 w-3.5 h-3.5 rounded-full bg-white transition-transform ${on ? "translate-x-[15px]" : "translate-x-0.5"}`} /></button>
+                </li>;
               })}
             </ul>
           </div>
@@ -522,6 +572,7 @@ function AgentConversations({ wf, tasks }: { wf: Workforce | null; tasks: OrchTa
   const statusOf = (id: string) => wf?.agents.find((a) => a.id === id)?.status || "Idle";
   const react = (mid: number, e: string) => setReacts((r) => ({ ...r, [mid]: { ...(r[mid] || {}), [e]: (r[mid]?.[e] || 0) + 1 } }));
 
+  const [voiceOut, setVoiceOut] = useState(false);
   const send = async (text: string, mention: string, img: ImgAtt | null) => {
     const t = text.trim();
     if ((!t && !img) || busy) return;
@@ -532,6 +583,7 @@ function AgentConversations({ wf, tasks }: { wf: Workforce | null; tasks: OrchTa
       const history: AgentChatTurn[] = msgs.slice(-10).map((m) => ({ role: m.role, name: m.name, text: m.text }));
       const r = await agentChat(t || "Analyze this image.", { history, mentionId: mention || (isOpener ? topic.lead : ""), imageBase64: img?.base64, imageType: img?.type });
       setMsgs((m) => [...m, { id: MID++, role: "agent", agentId: r.agentId, name: r.agentName, text: r.text, ts: Date.now() }]);
+      if (voiceOut && r.text) speakReply(r.text);
     } catch {
       setMsgs((m) => [...m, { id: MID++, role: "agent", agentId: "ceo", name: "AI CEO / Orchestrator", text: "Couldn't reach the team right now — check the LLM key/quota.", ts: Date.now() }]);
     } finally { setBusy(false); }
@@ -600,7 +652,7 @@ function AgentConversations({ wf, tasks }: { wf: Workforce | null; tasks: OrchTa
           <div ref={endRef} />
         </div>
 
-        <ChatInput members={AGENTS} busy={busy} mentionId={to} setMentionId={setTo} statusOf={statusOf} seed={{ text: topic.opener, key: selId }} onSend={(text, img) => send(text, to, img)} placeholder={`Message ${topic.title}… (@ to mention, 📎 to attach an image)`} />
+        <ChatInput members={AGENTS} busy={busy} mentionId={to} setMentionId={setTo} statusOf={statusOf} seed={{ text: topic.opener, key: selId }} onSend={(text, img) => send(text, to, img)} placeholder={`Message ${topic.title}… (@ to mention, 📎 to attach an image)`} voiceOut={voiceOut} onToggleVoiceOut={() => setVoiceOut((v) => { if (v) stopSpeaking(); return !v; })} />
       </section>
 
       {/* RIGHT: details + participants + related tasks */}

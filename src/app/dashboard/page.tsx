@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import {
   fetchMe, getStoredUser, getStats, getActivity, getBrainTasks, approveBrainTask, dismissBrainTask,
-  getCeoOverview,
+  getCeoOverview, getAgentToggles, setAgentEnabled,
   type Stats, type Activity, type BrainTask, type CeoOverview,
 } from "@/lib/api";
 import Sidebar from "@/components/Sidebar";
@@ -208,6 +208,9 @@ export default function DashboardPage() {
                 </div>
               </div>
 
+              {/* Agent master switches — OFF by default (token-saving) */}
+              <FadeUp><AgentControls /></FadeUp>
+
               {/* Quick Actions */}
               <FadeUp>
                 <Panel title="Quick Actions">
@@ -229,6 +232,39 @@ export default function DashboardPage() {
 }
 
 /* ----------------------------- Pieces ----------------------------- */
+function AgentControls() {
+  const [enabled, setEnabled] = useState<Record<string, boolean>>({});
+  const [labels, setLabels] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState("");
+  const [loading, setLoading] = useState(true);
+  useEffect(() => { getAgentToggles().then((r) => { setEnabled(r.enabled || {}); setLabels(r.labels || {}); }).catch(() => {}).finally(() => setLoading(false)); }, []);
+  const toggle = async (id: string) => {
+    const next = !enabled[id];
+    setBusy(id); setEnabled((e) => ({ ...e, [id]: next }));
+    try { await setAgentEnabled(id, next); } catch { setEnabled((e) => ({ ...e, [id]: !next })); } finally { setBusy(""); }
+  };
+  const onCount = AGENTS.filter((a) => enabled[a.id]).length;
+  return (
+    <Panel title="Agent Controls" sub="Agents are OFF by default to save tokens — switch on the ones you need" right={<span className="text-[11px] font-semibold text-emerald-400">{onCount}/{AGENTS.length} on</span>}>
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2">
+        {AGENTS.map((a) => {
+          const Icon = AGENT_ICONS[a.icon] || Sparkles;
+          const on = !!enabled[a.id];
+          return (
+            <div key={a.id} className={`flex items-center gap-2.5 rounded-xl border p-2.5 ${on ? "border-emerald-500/30 bg-emerald-500/5" : "border-ink-800 bg-ink-950/40"}`}>
+              <span className={`w-8 h-8 rounded-lg grid place-items-center shrink-0 ${on ? "bg-emerald-500/15 text-emerald-300" : "bg-ink-800 text-slate-500"}`}><Icon className="w-4 h-4" /></span>
+              <div className="min-w-0 flex-1"><div className="text-[12px] font-semibold text-white truncate">{labels[a.id] || a.name}</div><div className={`text-[10px] ${on ? "text-emerald-400" : "text-slate-500"}`}>{on ? "● Active" : "○ Off"}</div></div>
+              <button onClick={() => toggle(a.id)} disabled={busy === a.id || loading} role="switch" aria-checked={on} title={on ? "Switch off" : "Switch on"} className={`relative w-10 h-6 rounded-full transition-colors shrink-0 disabled:opacity-50 ${on ? "bg-emerald-500" : "bg-ink-700"}`}>
+                <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-transform ${on ? "translate-x-4" : "translate-x-0.5"}`} />
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </Panel>
+  );
+}
+
 function Panel({ title, sub, right, children }: { title?: string; sub?: string; right?: React.ReactNode; children: React.ReactNode }) {
   return (
     <div className="rounded-2xl border border-ink-800 bg-ink-900/50 p-4">

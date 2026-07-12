@@ -7,6 +7,7 @@ import {
   RefreshCw, CheckCircle2, ArrowRight, Search, Send, Globe, Building2, Zap, Star, Compass, DollarSign, Info, X, Eye, Plus, ChevronLeft, ChevronRight, Phone, Trash2, UserCheck, AlertTriangle, GitMerge, Settings, Database,
 } from "lucide-react";
 import Sidebar from "@/components/Sidebar";
+import AgentGate from "@/components/AgentGate";
 import { FadeUp, Stagger, Item, motion } from "@/components/motion";
 import {
   fetchMe, getStoredUser, getMarketplaceGrowth, getMarketplaceProviders, discoverProviders, mktPublish, mktToSales, getProviderDiscovery, mktBulkPublish,
@@ -80,6 +81,7 @@ export default function MarketplacePage() {
   return (
     <div className="flex min-h-screen bg-ink-950 text-slate-200">
       <Sidebar />
+        <AgentGate agentId="marketplace" label="Marketplace Growth" accent="from-cyan-500 to-blue-600" />
       <main className="flex-1 min-w-0">
         {note && <div className="fixed top-4 right-4 z-[80] rounded-xl border border-brand-500/40 bg-ink-900 px-4 py-2.5 text-[12px] text-brand-100 shadow-2xl max-w-md">{note}</div>}
         {discOpen && <DiscoverModal categories={data?.categories || []} onClose={() => setDiscOpen(false)} flash={flash} onDone={load} />}

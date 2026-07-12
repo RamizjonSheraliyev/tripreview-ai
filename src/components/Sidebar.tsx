@@ -6,6 +6,7 @@ import {
   Sparkles, LogOut, ExternalLink,
   LayoutDashboard, Crown, MessageSquare, ListChecks, Gavel,
   Megaphone, Search, PenLine, Send, Share2, Radar, Briefcase, UserCheck, Network, Link2,
+  BarChart3,
 } from "lucide-react";
 import { logout } from "@/lib/api";
 import { StatusDot } from "@/components/motion";
@@ -36,6 +37,7 @@ const GROUPS: NavGroup[] = [
       { label: "Content Distribution", icon: Share2, href: "/agents/distribution", dot: true },
       { label: "Competitive Intelligence", icon: Radar, href: "/agents/competitive", dot: true },
       { label: "Authority Growth", icon: Link2, href: "/agents/backlink", dot: true },
+      { label: "Reports & Insights", icon: BarChart3, href: "/reports", dot: true },
     ],
   },
 ];

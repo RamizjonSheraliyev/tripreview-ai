@@ -8,6 +8,7 @@ import {
   CalendarDays, List, Copy, Pencil, Trash2, ChevronLeft, ChevronRight, FileText, MessageCircle, Compass,
 } from "lucide-react";
 import Sidebar from "@/components/Sidebar";
+import AgentGate from "@/components/AgentGate";
 import { FadeUp, Stagger, Item, motion } from "@/components/motion";
 import {
   fetchMe, getStoredUser, getDistributionOverview, distDistribute, distRun, distToggleRule, getDistributionChannels,
@@ -70,6 +71,7 @@ export default function DistributionPage() {
   return (
     <div className="flex min-h-screen bg-ink-950 text-slate-200">
       <Sidebar />
+        <AgentGate agentId="distribution" label="Content Distribution" accent="from-fuchsia-500 to-pink-600" />
       <main className="flex-1 min-w-0">
         {note && <div className="fixed top-4 right-4 z-[80] rounded-xl border border-emerald-500/40 bg-ink-900 px-4 py-2.5 text-[12px] text-emerald-100 shadow-2xl max-w-md">{note}</div>}
         {distOpen && data && <DistributeModal data={data} onClose={() => setDistOpen(false)} flash={flash} onDone={load} />}

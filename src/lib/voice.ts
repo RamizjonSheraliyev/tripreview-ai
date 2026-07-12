@@ -44,3 +44,64 @@ export function speakUz(text: string, cb?: () => void) {
     run();
   }
 }
+
+/** Speak an agent reply aloud (strips HTML/markdown first). */
+export function speakReply(text: string, cb?: () => void) {
+  const said = String(text || "")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/```[\s\S]*?```/g, " code block ")
+    .replace(/[*_#`>|]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 700);
+  if (!said) { cb?.(); return; }
+  speakUz(said, cb);
+}
+
+export function ttsSupported(): boolean {
+  return typeof window !== "undefined" && !!window.speechSynthesis;
+}
+export function sttSupported(): boolean {
+  return typeof window !== "undefined" && (("SpeechRecognition" in window) || ("webkitSpeechRecognition" in window));
+}
+export function stopSpeaking(): void {
+  if (typeof window !== "undefined" && window.speechSynthesis) window.speechSynthesis.cancel();
+}
+
+type RecognizerHandlers = {
+  lang?: string;
+  onInterim?: (text: string) => void;
+  onFinal?: (text: string) => void;
+  onStart?: () => void;
+  onEnd?: () => void;
+  onError?: (err: string) => void;
+};
+
+// One-utterance speech recognizer (push-to-talk). Returns null if unsupported.
+export function createRecognizer(h: RecognizerHandlers): { start: () => void; stop: () => void } | null {
+  if (!sttSupported()) return null;
+  const SR: any = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+  const rec = new SR();
+  rec.lang = h.lang || process.env.NEXT_PUBLIC_VOICE_LANG || "en-US";
+  rec.interimResults = true;
+  rec.continuous = false;
+  rec.maxAlternatives = 1;
+  rec.onstart = () => h.onStart?.();
+  rec.onerror = (e: any) => h.onError?.(String(e?.error || "error"));
+  rec.onend = () => h.onEnd?.();
+  rec.onresult = (e: any) => {
+    let interim = "";
+    let final = "";
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      const r = e.results[i];
+      if (r.isFinal) final += r[0].transcript;
+      else interim += r[0].transcript;
+    }
+    if (final) h.onFinal?.(final.trim());
+    else if (interim) h.onInterim?.(interim.trim());
+  };
+  return {
+    start: () => { try { rec.start(); } catch { /* already started */ } },
+    stop: () => { try { rec.stop(); } catch { /* already stopped */ } },
+  };
+}

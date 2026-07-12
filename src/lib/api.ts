@@ -248,6 +248,30 @@ export function rejectCeoProposal(id: string) {
   return request<{ ok: boolean; proposal: CeoProposalItem }>(`/admin/agents/ceo/proposals/${id}/reject`, { method: "POST" });
 }
 
+// ---- Decision Center (real AI-recommendation cockpit) ----
+export type DecisionStatus = "proposed" | "applied" | "rejected" | "failed";
+export type DecisionItem = {
+  id: string; decId: string; title: string; summary: string; detail: string;
+  category: string; requestedBy: string; impact: "High" | "Medium" | "Low";
+  confidence: number; priority: "High" | "Medium" | "Low"; status: DecisionStatus;
+  source: string; fixType: string; autoExecutable: boolean;
+  page: string; path: string; link: string; result: string;
+  requestedAt: string; resolvedAt: string | null;
+};
+export type DecisionKpis = { pending: number; highImpact: number; avgConfidence: number; autoExecuted: number; resolvedThisWeek: number; total: number };
+export type DecisionHealth = { overall: number | null; label: string; accuracy: number | null; timeliness: number | null; impact: number | null; adoption: number | null; resolvedTotal: number };
+export type DecisionCategory = { name: string; count: number; pct: number };
+export type RecentDecision = { id: string; title: string; category: string; decision: "Approved" | "Rejected" | "Failed"; result: string; at: string; impact: string };
+export type DecisionTrendPoint = { week: string; created: number; resolved: number };
+export type DecisionCenter = {
+  kpis: DecisionKpis; health: DecisionHealth; decisions: DecisionItem[];
+  byCategory: DecisionCategory[]; recent: RecentDecision[]; trend: DecisionTrendPoint[];
+  filters: { categories: string[]; owners: string[] }; _ai: boolean; generatedAt: string;
+};
+export function getDecisionCenter() {
+  return request<DecisionCenter>("/admin/agents/ceo/decision-center");
+}
+
 // ---- Per-route on-page SEO audit (crawls every public route) ----
 export type SeoSignals = {
   ok: boolean; status?: number; error?: string;
@@ -360,6 +384,12 @@ export function assignAgentTask(agentId: string, title: string) {
 }
 export function toggleAgentPause(agentId: string, paused?: boolean) {
   return request<{ ok: boolean; agentId: string; paused: boolean }>(`/admin/agents/ceo/agents/${agentId}/pause`, { method: "POST", body: JSON.stringify(paused === undefined ? {} : { paused }) });
+}
+// Agent master switches — OFF by default; admin flips them on to activate (token-saving).
+export type AgentToggles = { enabled: Record<string, boolean>; labels: Record<string, string> };
+export function getAgentToggles() { return request<AgentToggles>("/admin/agents/ceo/agents/toggles"); }
+export function setAgentEnabled(agentId: string, enabled: boolean) {
+  return request<{ ok: boolean; agentId: string; enabled: boolean }>(`/admin/agents/ceo/agents/${agentId}/enable`, { method: "POST", body: JSON.stringify({ enabled }) });
 }
 
 // ---- Workflow Updates — real automated-workflow tracking ----
@@ -758,6 +788,20 @@ export type MarketingData = {
   _ai: boolean;
 };
 export function getMarketingDirector() { return request<MarketingData>("/admin/agents/ceo/marketing"); }
+
+// ---- Paid-ad campaigns (real Google Ads / Meta Ads, or connect state) ----
+export type AdCampaignRow = { id: string; platform: string; name: string; channel: string; objective: string; status: string; currency: string; spend: number; impressions: number; clicks: number; conversions: number; revenue: number; roas: number; startDate: string | null; endDate: string | null };
+export type AdCampaigns = {
+  connected: { google: boolean; meta: boolean };
+  campaigns: AdCampaignRow[];
+  overview: { totalCampaigns: number; activeCampaigns: number; totalSpend: number; totalConversions: number; totalRevenue: number; avgRoas: number; costPerConversion: number } | null;
+  funnel: { impressions: number; clicks: number; ctr: number; conversions: number; cvr: number; revenue: number } | null;
+  channelMix: { label: string; spend: number; pct: number }[];
+  statusMix: { label: string; count: number }[];
+  syncedAt: string | null; currency: string; errors: { meta?: string | null; google?: string | null };
+};
+export function getMarketingCampaigns() { return request<AdCampaigns>("/admin/agents/ceo/marketing/campaigns"); }
+export function syncMarketingCampaigns() { return request<AdCampaigns>("/admin/agents/ceo/marketing/campaigns/sync", { method: "POST" }); }
 
 // ---- Marketing Director task board (real task analytics) ----
 export type MarketingTasks = {

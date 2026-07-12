@@ -8,6 +8,7 @@ import {
   Instagram, Mail, Webhook as WebhookIcon, Clock, Trash2, ExternalLink, AlertTriangle, CheckCircle2, Search,
 } from "lucide-react";
 import Sidebar from "@/components/Sidebar";
+import AgentGate from "@/components/AgentGate";
 import { FadeUp, Stagger, Item, motion } from "@/components/motion";
 import {
   fetchMe, getStoredUser, getPublisherOverview, getPublisherQueue, getPublisherQueueBoard, getPublisherPublished, getPublisherChannels,
@@ -67,6 +68,7 @@ export default function PublisherPage() {
   return (
     <div className="flex min-h-screen bg-ink-950 text-slate-200">
       <Sidebar />
+        <AgentGate agentId="publisher" label="Publisher Agent" accent="from-sky-500 to-indigo-600" />
       <main className="flex-1 min-w-0">
         {note && <div className="fixed top-4 right-4 z-[80] rounded-xl border border-brand-500/40 bg-ink-900 px-4 py-2.5 text-[12px] text-brand-100 shadow-2xl max-w-sm">{note}</div>}
         <header className="sticky top-0 z-30 h-16 border-b border-ink-800 bg-ink-950/80 backdrop-blur flex items-center gap-3 px-5">

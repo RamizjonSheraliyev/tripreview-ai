@@ -8,6 +8,7 @@ import {
   Search, Eye, Mail, MessageCircle, Globe, Phone, ChevronLeft, ChevronRight, Pencil, DollarSign, Tag, Info, X, CreditCard, Repeat, Wallet,
 } from "lucide-react";
 import Sidebar from "@/components/Sidebar";
+import AgentGate from "@/components/AgentGate";
 import { FadeUp, Stagger, Item, motion } from "@/components/motion";
 import {
   fetchMe, getStoredUser, getOnboardingOverview, getOnboardingProviders, getClaimRequests, getVerificationCenter, getProfileCompletion, getServiceListings, setListingStatus, getSubscriptions, updateSubscriptionPlan, getApprovalQueue, queueAction, getMissingInformation, getOnboardingFunnel, getBadgeCenter, onbVerify, onbActivate, onbReject, onbRequestInfo,
@@ -79,6 +80,7 @@ export default function OnboardingPage() {
   return (
     <div className="flex min-h-screen bg-ink-950 text-slate-200">
       <Sidebar />
+        <AgentGate agentId="onboarding" label="Provider Onboarding" accent="from-emerald-500 to-green-600" />
       <main className="flex-1 min-w-0">
         {note && <div className="fixed top-4 right-4 z-[80] rounded-xl border border-brand-500/40 bg-ink-900 px-4 py-2.5 text-[12px] text-brand-100 shadow-2xl max-w-md">{note}</div>}
         <header className="sticky top-0 z-30 h-16 border-b border-ink-800 bg-ink-950/80 backdrop-blur flex items-center gap-3 px-5">

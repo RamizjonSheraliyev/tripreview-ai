@@ -16,16 +16,16 @@ export type AgentDef = {
 export const AGENTS: AgentDef[] = [
   { id: "ceo", name: "AI CEO / Orchestrator", dept: "Executive", icon: "Crown", role: "Coordinates the workforce, assigns tasks, approves actions.", live: true },
 
-  { id: "marketing", name: "Marketing Director", dept: "Growth", icon: "Megaphone", role: "Marketing strategy, growth opportunities, campaigns.", live: false },
+  { id: "marketing", name: "Marketing Director", dept: "Growth", icon: "Megaphone", role: "Marketing strategy, growth opportunities, campaigns.", live: true },
   { id: "seo", name: "SEO Agent", dept: "Growth", icon: "Search", role: "Keyword research, briefs, metadata, internal links.", live: true },
   { id: "copywriter", name: "Copywriter Agent", dept: "Growth", icon: "PenLine", role: "Writes SEO blog, landing & provider content drafts.", live: true },
   { id: "publisher", name: "Publisher Agent", dept: "Growth", icon: "Send", role: "Formats & publishes approved content to the site.", live: true },
-  { id: "distribution", name: "Content Distribution", dept: "Growth", icon: "Share2", role: "Turns content into social posts & newsletters.", live: false },
-  { id: "intel", name: "Competitive Intelligence", dept: "Growth", icon: "Radar", role: "Monitors competitors, finds content & keyword gaps.", live: false },
+  { id: "distribution", name: "Content Distribution", dept: "Growth", icon: "Share2", role: "Turns content into social posts & newsletters.", live: true },
+  { id: "intel", name: "Competitive Intelligence", dept: "Growth", icon: "Radar", role: "Monitors competitors, finds content & keyword gaps.", live: true },
 
-  { id: "marketplace", name: "Marketplace Growth", dept: "Marketplace", icon: "Building2", role: "Discovers providers, creates unclaimed profiles.", live: false },
-  { id: "sales", name: "Sales Agent", dept: "Marketplace", icon: "Handshake", role: "Outreach to providers via WhatsApp & email.", live: false },
-  { id: "onboarding", name: "Provider Onboarding", dept: "Marketplace", icon: "UserCheck", role: "Helps providers claim, verify & complete profiles.", live: false },
+  { id: "marketplace", name: "Marketplace Growth", dept: "Marketplace", icon: "Building2", role: "Discovers providers, creates unclaimed profiles.", live: true },
+  { id: "sales", name: "Sales Agent", dept: "Marketplace", icon: "Handshake", role: "Outreach to providers via WhatsApp & email.", live: true },
+  { id: "onboarding", name: "Provider Onboarding", dept: "Marketplace", icon: "UserCheck", role: "Helps providers claim, verify & complete profiles.", live: true },
 ];
 
 export const GROWTH_AGENTS = AGENTS.filter((a) => a.dept === "Growth");

@@ -385,6 +385,28 @@ export function assignAgentTask(agentId: string, title: string) {
 export function toggleAgentPause(agentId: string, paused?: boolean) {
   return request<{ ok: boolean; agentId: string; paused: boolean }>(`/admin/agents/ceo/agents/${agentId}/pause`, { method: "POST", body: JSON.stringify(paused === undefined ? {} : { paused }) });
 }
+// Automation rules — real switches; each gates an actual backend code path.
+export type AutomationRuleRow = { key: string; rule: string; desc: string; where: string; on: boolean };
+export function getAutomationRules() { return request<{ rules: AutomationRuleRow[] }>("/admin/agents/ceo/automation-rules"); }
+export function setAutomationRule(key: string, on: boolean) {
+  return request<{ ok: boolean; key: string; on: boolean }>(`/admin/agents/ceo/automation-rules/${key}`, { method: "POST", body: JSON.stringify({ on }) });
+}
+
+// Growth jobs — discovery sweep + review harvest (minutes-long, polled).
+export type GrowthJob = {
+  running: boolean; startedAt: string | null; finishedAt: string | null;
+  progress: string; stats: Record<string, number>; log: string[]; error: string;
+};
+export function getGrowthJobs() {
+  return request<{ discovery: GrowthJob; harvest: GrowthJob }>("/admin/agents/growth/jobs");
+}
+export function startDiscoverySweep(perCategory = 8) {
+  return request<{ ok: boolean; started?: boolean; message: string }>("/admin/agents/growth/discover-sweep", { method: "POST", body: JSON.stringify({ perCategory }) });
+}
+export function startReviewHarvest(target = 100) {
+  return request<{ ok: boolean; started?: boolean; message: string }>("/admin/agents/growth/harvest-reviews", { method: "POST", body: JSON.stringify({ target }) });
+}
+
 // Agent master switches — OFF by default; admin flips them on to activate (token-saving).
 export type AgentToggles = { enabled: Record<string, boolean>; labels: Record<string, string> };
 export function getAgentToggles() { return request<AgentToggles>("/admin/agents/ceo/agents/toggles"); }
@@ -512,8 +534,12 @@ export function agentChat(message: string, opts: { history?: AgentChatTurn[]; me
 }
 
 // ---- Task-executing group chat (persisted, approve/reject cards) ----
+/** One real tool the agent ran before answering — the receipt that it acted. */
+export type ChatStep = { tool: string; summary: string; ok: boolean };
 export type ChatCard = {
-  type: "blog" | "seo-fix" | "distribution" | "providers";
+  // "tool" = the agent proposed real work (writing, publishing, spending) and is
+  // waiting on the founder's Approve before anything runs.
+  type: "blog" | "seo-fix" | "distribution" | "providers" | "tool";
   title: string;
   subtitle?: string;
   body?: string;
@@ -530,8 +556,10 @@ export type ChatCard = {
 };
 export type ChatMsg = {
   id: string; conversation: string; role: "founder" | "agent"; agentId: string; name: string;
-  text: string; card: ChatCard | null; actionStatus: "" | "pending" | "approved" | "rejected";
-  actionResult: string; createdAt: string;
+  // "running" = approved slow work executing in the background; "failed" = it
+  // errored or a restart interrupted it.
+  text: string; card: ChatCard | null; actionStatus: "" | "pending" | "running" | "approved" | "rejected" | "failed";
+  actionResult: string; steps?: ChatStep[]; createdAt: string;
 };
 export function chatHistoryApi(conversation = "all") {
   return request<{ messages: ChatMsg[] }>(`/admin/agents/ceo/chat/history?conversation=${encodeURIComponent(conversation)}`);
@@ -549,7 +577,9 @@ export function chatSendApi(message: string, opts: { history?: AgentChatTurn[]; 
   });
 }
 export function chatActApi(messageId: string, decision: "approve" | "reject") {
-  return request<{ ok: boolean; message?: string; msg?: ChatMsg }>("/admin/agents/ceo/chat/act", {
+  // `running` = slow work (writing an article) started in the background; poll
+  // the history until the message leaves "running".
+  return request<{ ok: boolean; running?: boolean; message?: string; msg?: ChatMsg }>("/admin/agents/ceo/chat/act", {
     method: "POST",
     body: JSON.stringify({ messageId, decision }),
   });
@@ -612,8 +642,26 @@ export type LandingPageFull = GeneratedPage & {
   heroSubtitle: string; heroIntro: string; sections: LandingSection[]; faq: LandingFaq[];
   metaTitle: string; metaDescription: string; publishedAt?: string;
 };
-export function generateLandingPage(keyword: string) {
-  return request<{ ok: boolean; page: LandingPageFull; ai: boolean }>("/admin/agents/ceo/pages/generate", { method: "POST", body: JSON.stringify({ keyword }) });
+export function generateLandingPage(keyword: string, category = "auto") {
+  return request<{ ok: boolean; page: LandingPageFull; ai: boolean }>("/admin/agents/ceo/pages/generate", { method: "POST", body: JSON.stringify({ keyword, category }) });
+}
+
+// ---- Landing page: the real template + the agent review team ----
+export type TemplateBlock = { key: string; name: string; source: "ai" | "live" | "static"; field: string; detail: string };
+export type LandingTeamMember = { id: string; name: string; line: string };
+export type LandingFinding = { where: string; problem: string; fix: string; auto: boolean };
+export type LandingReview = { agentId: string; agentName: string; findings: LandingFinding[]; text: string };
+export type LandingChange = { field: string; before: string; after: string };
+
+export function getPageTemplate() {
+  return request<{ blocks: TemplateBlock[]; team: LandingTeamMember[] }>("/admin/agents/ceo/pages/template");
+}
+/** Free: every finding is a measured fact, no LLM call. */
+export function reviewLandingPage(id: string) {
+  return request<{ ok: boolean; analysis: Record<string, LandingFinding[]>; total: number; reviews: LandingReview[] }>(`/admin/agents/ceo/pages/${id}/review`, { method: "POST" });
+}
+export function applyLandingAdvice(id: string) {
+  return request<{ ok: boolean; changes: LandingChange[]; manual: string[]; page: LandingPageFull }>(`/admin/agents/ceo/pages/${id}/apply-advice`, { method: "POST" });
 }
 export function listLandingPages() {
   return request<{ pages: GeneratedPage[] }>("/admin/agents/ceo/pages");
@@ -665,9 +713,9 @@ export type Orchestration = {
   stats: OrchStats;
   tasks: OrchTask[];
   flow: OrchFlowStage[];
-  automationRules: { rule: string; on: boolean }[];
-  triggers: { label: string; count: number }[];
-  recommendations: string[];
+  automationRules: AutomationRuleRow[];
+  triggers: { key: string; label: string; count: number; href: string }[];
+  recommendations: { title: string; body: string; impact: string; href: string }[];
   _ai: boolean;
 };
 export function getCeoOrchestration() {

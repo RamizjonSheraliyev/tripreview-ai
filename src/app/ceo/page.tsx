@@ -19,6 +19,7 @@ import {
   getCeoOverview, ceoAsk, getCeoOrchestration, executeCeoTask, taskChat, getCeoCompletedFixes,
   getCeoAudit, runCeoAudit, approveCeoProposal, rejectCeoProposal,
   getCeoSeo, runCeoSeo, getWorkforce, getRoi, getStrategy, generateStrategy, assignAgentTask, toggleAgentPause, agentChat, generateLandingPage, listLandingPages, getLandingPageById, editLandingPageAI, publishLandingPage, createBrief,
+  setAutomationRule, type AutomationRuleRow,
   type GeneratedPage, type LandingPageFull, type RoiData, type StrategyData,
   type Workforce, type WfAgent, type WfApproval, type AgentChatTurn,
   type Stats, type Activity, type SeriesPoint, type BrainTask, type CeoOverview, type CeoOpportunity,
@@ -167,7 +168,7 @@ export default function CeoPage() {
           ) : tab === "Executive Overview" ? (
             <Overview overview={overview} stats={stats} acts={acts} series={series} tasks={tasks} ctx={ctx} wf={wf} strat={strat} roi={roi} onAct={act} onAsk={() => setAskOpen(true)} onNav={setTab} />
           ) : tab === "Task Orchestration" ? (
-            <Orchestration />
+            <Orchestration onNav={setTab} />
           ) : tab === "SEO Audit" ? (
             <SeoAudit />
           ) : tab === "Agent Management" ? (
@@ -709,12 +710,16 @@ function agentIco(name: string): React.ElementType {
   return Sparkles;
 }
 
-function Orchestration() {
+function Orchestration({ onNav }: { onNav: (t: Tab) => void }) {
+  const router = useRouter();
   const [data, setData] = useState<OrchData | null>(null);
   const [loading, setLoading] = useState(true);
   const [sel, setSel] = useState<OrchTask | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [toast, setToast] = useState("");
+  const [rules, setRules] = useState<AutomationRuleRow[]>([]);
+  const [selRule, setSelRule] = useState<AutomationRuleRow | null>(null);
+  const [ruleBusy, setRuleBusy] = useState<string | null>(null);
   const [q, setQ] = useState("");
   const [statusF, setStatusF] = useState("All");
   const [deptF, setDeptF] = useState("All");
@@ -730,9 +735,26 @@ function Orchestration() {
       getCeoCompletedFixes().catch(() => null),
     ]);
     setData(d);
+    if (d) setRules(d.automationRules || []);
     if (f) setFixes(f.fixes);
   }, []);
   useEffect(() => { setLoading(true); load().finally(() => setLoading(false)); }, [load]);
+
+  // Flip a rule server-side. Optimistic, reverted on failure — the switch must
+  // never claim a state the backend didn't accept.
+  const toggleRule = async (r: AutomationRuleRow) => {
+    const next = !r.on;
+    setRuleBusy(r.key);
+    setRules((prev) => prev.map((x) => (x.key === r.key ? { ...x, on: next } : x)));
+    try {
+      const res = await setAutomationRule(r.key, next);
+      setRules((prev) => prev.map((x) => (x.key === r.key ? { ...x, on: res.on } : x)));
+      setToast(res.on ? `✓ Rule on: ${r.rule}` : `Rule off: ${r.rule} — that job will not run.`);
+    } catch {
+      setRules((prev) => prev.map((x) => (x.key === r.key ? { ...x, on: r.on } : x)));
+      setToast("Could not save the rule. Check the AI CEO backend.");
+    } finally { setRuleBusy(null); setTimeout(() => setToast(""), 4000); }
+  };
 
   const exec = async (t: OrchTask) => {
     setBusyId(t.id);
@@ -742,8 +764,9 @@ function Orchestration() {
       else if (r.autoFixed) setToast(`✓ Auto-fixed: ${r.result || t.task}`);
       else if (r.result) setToast(`✓ ${r.result}`);
       else if (r.alreadyClear) setToast("Already resolved.");
-      else setToast("Queued — opening admin to finish.");
-      if (r.ok !== false && !r.autoFixed && r.link) window.open(r.link, "_blank");
+      else setToast("✓ Acknowledged — task closed.");
+      // Never navigate away: the task is applied server-side and the list
+      // refreshes below. Use "View Output" in the drawer to open the page.
       await load();
       setSel(null);
     } catch { setToast("Could not execute. Check the AI CEO backend."); }
@@ -891,39 +914,69 @@ function Orchestration() {
         </Panel>
       </FadeUp>
 
-      {/* Automation / Triggers / Recommendations */}
+      {/* Automation / Triggers / Recommendations — every row is live and clickable */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        <FadeUp><Panel title="Automation Rules" sub="Rules that automatically trigger tasks">
+        <FadeUp><Panel title="Automation Rules" sub="Each switch gates a real backend job — off means it never runs"
+          right={<span className="text-[10px] font-bold px-2 py-1 rounded-lg bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">{rules.filter((r) => r.on).length}/{rules.length} on</span>}>
           <ul className="space-y-2">
-            {(data?.automationRules || []).map((r) => (
-              <li key={r.rule} className="flex items-center justify-between gap-2 rounded-lg border border-ink-800 bg-ink-950/40 px-3 py-2">
-                <span className="text-[11px] text-slate-300 leading-snug">{r.rule}</span>
-                <span className={`shrink-0 w-9 h-5 rounded-full grid items-center ${r.on ? "bg-emerald-500/80" : "bg-ink-700"} transition-colors`}><span className={`w-4 h-4 rounded-full bg-white transition-transform ${r.on ? "translate-x-4" : "translate-x-0.5"}`} /></span>
+            {rules.map((r) => (
+              <li key={r.key} className="flex items-center justify-between gap-2 rounded-lg border border-ink-800 bg-ink-950/40 px-3 py-2">
+                <button onClick={() => setSelRule(r)} className="min-w-0 flex-1 text-left group">
+                  <span className="block text-[11px] text-slate-300 leading-snug group-hover:text-white transition-colors">{r.rule}</span>
+                  <span className="block text-[9px] text-slate-500 mt-0.5 truncate">{r.where}</span>
+                </button>
+                <button
+                  onClick={() => toggleRule(r)}
+                  disabled={ruleBusy === r.key}
+                  aria-label={`${r.on ? "Disable" : "Enable"} rule: ${r.rule}`}
+                  aria-pressed={r.on}
+                  className={`shrink-0 w-9 h-5 rounded-full grid items-center transition-colors disabled:opacity-50 ${r.on ? "bg-emerald-500/80 hover:bg-emerald-500" : "bg-ink-700 hover:bg-ink-600"}`}
+                >
+                  <span className={`w-4 h-4 rounded-full bg-white transition-transform ${r.on ? "translate-x-4" : "translate-x-0.5"}`} />
+                </button>
               </li>
             ))}
+            {rules.length === 0 && <li className="rounded-xl border border-dashed border-ink-800 p-6 text-center text-[11px] text-slate-500">No automation rules loaded.</li>}
           </ul>
-          <button className="mt-3 text-[11px] font-semibold text-brand-400 hover:underline inline-flex items-center gap-1"><Settings2 className="w-3 h-3" /> Manage Rules <ArrowRight className="w-3 h-3" /></button>
+          <button onClick={() => setSelRule(rules[0] || null)} disabled={!rules.length} className="mt-3 text-[11px] font-semibold text-brand-400 hover:underline inline-flex items-center gap-1 disabled:opacity-40"><Settings2 className="w-3 h-3" /> Manage Rules <ArrowRight className="w-3 h-3" /></button>
         </Panel></FadeUp>
-        <FadeUp delay={0.04}><Panel title="Triggers" sub="Signals detected in the last 7 days">
-          <ul className="space-y-2">
+        <FadeUp delay={0.04}><Panel title="Triggers" sub="Live signals detected right now — click one to go handle it">
+          <ul className="space-y-1">
             {(data?.triggers || []).map((tr) => (
-              <li key={tr.label} className="flex items-center justify-between gap-2 text-[12px]">
-                <span className="text-slate-300 inline-flex items-center gap-2"><CircleDot className="w-3 h-3 text-brand-400" /> {tr.label}</span>
-                <span className="font-bold text-white tabular-nums"><AnimatedNumber value={tr.count} /></span>
+              <li key={tr.key}>
+                <button onClick={() => router.push(tr.href)} className="w-full flex items-center justify-between gap-2 text-[12px] rounded-lg px-2 py-1.5 hover:bg-ink-900/60 transition-colors group">
+                  <span className="text-slate-300 inline-flex items-center gap-2 group-hover:text-white transition-colors"><CircleDot className={`w-3 h-3 ${tr.count > 0 ? "text-brand-400" : "text-slate-600"}`} /> {tr.label}</span>
+                  <span className="inline-flex items-center gap-1">
+                    <span className={`font-bold tabular-nums ${tr.count > 0 ? "text-white" : "text-slate-600"}`}><AnimatedNumber value={tr.count} /></span>
+                    <ArrowRight className="w-3 h-3 text-slate-600 group-hover:text-brand-400 transition-colors" />
+                  </span>
+                </button>
               </li>
             ))}
           </ul>
-          <button className="mt-3 text-[11px] font-semibold text-brand-400 hover:underline inline-flex items-center gap-1">View All Triggers <ArrowRight className="w-3 h-3" /></button>
+          <button onClick={() => router.push("/decision-center")} className="mt-3 text-[11px] font-semibold text-brand-400 hover:underline inline-flex items-center gap-1">View All Triggers <ArrowRight className="w-3 h-3" /></button>
         </Panel></FadeUp>
-        <FadeUp delay={0.08}><Panel title="AI Recommendation" sub="Based on current data, the AI CEO recommends">
-          <ul className="space-y-2.5">
+        <FadeUp delay={0.08}><Panel title="AI Recommendation" sub="Derived from live platform data — click to act on it">
+          <ul className="space-y-1.5">
             {(data?.recommendations || []).map((r, i) => (
-              <li key={i} className="flex items-start gap-2 text-[12px] text-slate-300"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 mt-0.5 shrink-0" /> {r}</li>
+              <li key={i}>
+                <button onClick={() => router.push(r.href)} className="w-full text-left flex items-start gap-2 text-[12px] rounded-lg px-2 py-1.5 hover:bg-ink-900/60 transition-colors group">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 mt-0.5 shrink-0" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-slate-300 group-hover:text-white transition-colors font-semibold">{r.title}</span>
+                    <span className="block text-[10px] text-slate-500 leading-snug mt-0.5">{r.body}</span>
+                  </span>
+                  <span className={`shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded ${r.impact === "High" ? "bg-rose-500/10 text-rose-300" : "bg-amber-500/10 text-amber-300"}`}>{r.impact}</span>
+                </button>
+              </li>
             ))}
+            {!(data?.recommendations || []).length && <li className="rounded-xl border border-dashed border-ink-800 p-6 text-center text-[11px] text-slate-500">No recommendations — nothing needs attention.</li>}
           </ul>
-          <button className="mt-3 text-[11px] font-semibold text-brand-400 hover:underline inline-flex items-center gap-1">View All Recommendations <ArrowRight className="w-3 h-3" /></button>
+          <button onClick={() => onNav("Strategy & Opportunities")} className="mt-3 text-[11px] font-semibold text-brand-400 hover:underline inline-flex items-center gap-1">View All Recommendations <ArrowRight className="w-3 h-3" /></button>
         </Panel></FadeUp>
       </div>
+
+      {selRule && <RuleDetails rule={rules.find((r) => r.key === selRule.key) || selRule} rules={rules} busy={ruleBusy} onToggle={toggleRule} onPick={setSelRule} onClose={() => setSelRule(null)} />}
 
       {/* Completed tasks — real applied fixes with before → after diffs */}
       <FadeUp>
@@ -1082,6 +1135,64 @@ function TaskDetails({ task, busy, onExec, onClose }: { task: OrchTask; busy: bo
 
 // Drawer for a completed fix — the full before → after diff, what page it
 // changed and a link straight to the live page so the change can be verified.
+// Automation rule drawer — the full catalog, what each rule actually does, and
+// the live switch. This is the "Manage Rules" surface.
+function RuleDetails({ rule, rules, busy, onToggle, onPick, onClose }: {
+  rule: AutomationRuleRow; rules: AutomationRuleRow[]; busy: string | null;
+  onToggle: (r: AutomationRuleRow) => void; onPick: (r: AutomationRuleRow) => void; onClose: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end bg-black/50" onClick={onClose}>
+      <motion.div initial={{ x: 460 }} animate={{ x: 0 }} transition={{ type: "spring", damping: 26, stiffness: 240 }} onClick={(e) => e.stopPropagation()} className="w-full max-w-md h-full bg-ink-900 border-l border-ink-800 flex flex-col">
+        <div className="h-16 px-4 flex items-center gap-2 border-b border-ink-800 shrink-0">
+          <Settings2 className="w-4 h-4 text-brand-400" />
+          <span className="text-sm font-bold text-white">Manage Rules</span>
+          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300">{rules.filter((r) => r.on).length}/{rules.length} on</span>
+          <button onClick={onClose} className="ml-auto w-8 h-8 grid place-items-center rounded-lg text-slate-400 hover:bg-ink-800"><X className="w-4 h-4" /></button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin">
+          <div>
+            <h3 className="text-base font-bold text-white leading-snug">{rule.rule}</h3>
+            <div className={`inline-flex items-center gap-1.5 mt-2 text-[10px] font-bold px-2 py-1 rounded-lg border ${rule.on ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/20" : "bg-ink-800 text-slate-400 border-ink-700"}`}>
+              <StatusDot tone={rule.on ? "emerald" : "slate"} /> {rule.on ? "Active" : "Off"}
+            </div>
+          </div>
+          <div className="rounded-xl border border-ink-800 bg-ink-950/40 p-3">
+            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">What it does</div>
+            <p className="text-[12px] text-slate-300 leading-relaxed">{rule.desc}</p>
+          </div>
+          <div className="rounded-xl border border-ink-800 bg-ink-950/40 p-3">
+            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Where it runs</div>
+            <code className="text-[11px] text-brand-400 break-all">{rule.where}</code>
+            <p className="text-[10px] text-slate-500 leading-relaxed mt-1.5">Off makes that code path return immediately — no LLM call, no task queued, no tokens spent.</p>
+          </div>
+          <button
+            onClick={() => onToggle(rule)}
+            disabled={busy === rule.key}
+            className={`w-full rounded-xl px-4 py-2.5 text-[12px] font-bold transition-colors disabled:opacity-50 ${rule.on ? "bg-ink-800 text-slate-300 hover:bg-ink-700 border border-ink-700" : "bg-emerald-600 text-white hover:bg-emerald-500"}`}
+          >
+            {busy === rule.key ? <Loader2 className="w-3.5 h-3.5 animate-spin inline" /> : rule.on ? "Turn this rule off" : "Turn this rule on"}
+          </button>
+          <div>
+            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-2">All rules</div>
+            <ul className="space-y-1.5">
+              {rules.map((r) => (
+                <li key={r.key}>
+                  <button onClick={() => onPick(r)} className={`w-full text-left flex items-center gap-2 rounded-lg border px-3 py-2 transition-colors ${r.key === rule.key ? "border-brand-500/40 bg-brand-500/10" : "border-ink-800 bg-ink-950/40 hover:bg-ink-900/60"}`}>
+                    <StatusDot tone={r.on ? "emerald" : "slate"} />
+                    <span className="min-w-0 flex-1 text-[11px] text-slate-300 leading-snug truncate">{r.rule}</span>
+                    <span className={`shrink-0 text-[9px] font-bold ${r.on ? "text-emerald-400" : "text-slate-600"}`}>{r.on ? "ON" : "OFF"}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
 function FixDetails({ fix, onClose }: { fix: CompletedFix; onClose: () => void }) {
   const pagePath = fix.path ? `/en${fix.path === "/" ? "" : fix.path}` : "";
   return (
@@ -1372,100 +1483,42 @@ function SiteAudit() {
 
 const PUBLIC_SITE = process.env.NEXT_PUBLIC_SITE_URL || "https://tripreview.ae";
 
+// The page builder lives on its own screen now (/page-builder) — keyword to
+// live page, the real template block by block, and the agent team review. This
+// card is the doorway from the SEO Audit tab.
 function PageBuilder() {
+  const router = useRouter();
   const [pages, setPages] = useState<GeneratedPage[]>([]);
-  const [sel, setSel] = useState<LandingPageFull | null>(null);
-  const [kw, setKw] = useState("");
-  const [instr, setInstr] = useState("");
-  const [genBusy, setGenBusy] = useState(false);
-  const [editBusy, setEditBusy] = useState(false);
-  const [pubBusy, setPubBusy] = useState(false);
-  const [loadingSel, setLoadingSel] = useState(false);
-  const [toast, setToast] = useState("");
-
-  const refresh = useMemo(() => async () => { const d = await listLandingPages().catch(() => null); if (d) setPages(d.pages); }, []);
-  useEffect(() => { refresh(); }, [refresh]);
-  const note = (t: string, ms = 4500) => { setToast(t); setTimeout(() => setToast(""), ms); };
-
-  const pick = async (id: string) => { setLoadingSel(true); try { const d = await getLandingPageById(id); setSel(d.page); } catch { /* ignore */ } finally { setLoadingSel(false); } };
-  const generate = async () => {
-    const k = kw.trim(); if (!k || genBusy) return; setGenBusy(true);
-    try { const r = await generateLandingPage(k); setKw(""); setSel(r.page); await refresh(); note(`✓ Draft created${r.ai ? " (AI-written)" : " (template — add an LLM key for AI copy)"} — preview, edit, then publish.`, 6000); }
-    catch (e) { note(`Failed: ${e instanceof Error ? e.message : "error"}`); }
-    finally { setGenBusy(false); }
-  };
-  const applyEdit = async () => {
-    const i = instr.trim(); if (!i || !sel || editBusy) return; setEditBusy(true);
-    try { const r = await editLandingPageAI(sel._id, i); setSel(r.page); setInstr(""); note("✓ Page updated by the SEO Agent."); }
-    catch (e) { note(`Edit failed: ${e instanceof Error ? e.message : "error"}`); }
-    finally { setEditBusy(false); }
-  };
-  const publish = async () => {
-    if (!sel || pubBusy) return; setPubBusy(true);
-    try { const r = await publishLandingPage(sel._id); setSel(r.page); await refresh(); note(`✓ Live at /${r.page.locale}/${r.page.slug} — added to the sitemap.`, 6000); }
-    catch (e) { note(`Publish failed: ${e instanceof Error ? e.message : "error"}`); }
-    finally { setPubBusy(false); }
-  };
-
+  useEffect(() => { listLandingPages().then((r) => setPages(r.pages)).catch(() => {}); }, []);
+  const live = pages.filter((p) => p.status === "Published").length;
   return (
     <FadeUp>
-      <Panel title="SEO Agent · Page Builder" sub="Type a keyword → the agent writes a full landing page. Preview it live, tell the agent what to change, then publish to /en/<slug> (sitemap + real provider data baked in).">
-        {toast && <div className="mb-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-200">{toast}</div>}
-        <form onSubmit={(e) => { e.preventDefault(); generate(); }} className="flex items-center gap-2 mb-4">
-          <div className="relative flex-1"><Globe className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" /><input value={kw} onChange={(e) => setKw(e.target.value)} placeholder="e.g. luxury yacht rental dubai" className="w-full rounded-lg border border-ink-700 bg-ink-900 pl-9 pr-3 h-10 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-brand-500" /></div>
-          <button type="submit" disabled={genBusy || !kw.trim()} className="inline-flex items-center gap-1.5 px-4 h-10 rounded-lg bg-gradient-to-r from-brand-500 to-violet-600 text-white text-sm font-bold disabled:opacity-50 shrink-0">{genBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />} Build Page</button>
-        </form>
-
-        <div className="grid grid-cols-1 lg:grid-cols-[220px_1fr] gap-4">
-          <div className="space-y-1.5">
-            <div className="text-[10px] uppercase tracking-wide text-slate-600 font-semibold">Pages ({pages.length})</div>
-            {pages.length === 0 && <div className="text-[11px] text-slate-500">No pages yet — build one above.</div>}
-            {pages.map((p) => (
-              <button key={p._id} onClick={() => pick(p._id)} className={`w-full text-left rounded-lg border px-2.5 py-2 ${sel?._id === p._id ? "border-brand-500 bg-ink-900/60" : "border-ink-800 hover:bg-ink-900/40"}`}>
-                <div className="text-[11px] font-bold text-white truncate">{p.heroTitle}</div>
-                <div className="flex items-center gap-1.5 mt-0.5"><span className="text-[9px] text-slate-600 truncate flex-1">/{p.locale}/{p.slug}</span><span className={`text-[8px] font-bold px-1 rounded ${p.status === "Published" ? "bg-emerald-500/15 text-emerald-300" : "bg-amber-500/15 text-amber-300"}`}>{p.status}</span></div>
-              </button>
-            ))}
+      <Panel title="SEO Agent · Page Builder" sub="Type a keyword → the agent writes a full landing page. Review it with the team, then publish.">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 grid place-items-center shrink-0"><Layers className="w-5 h-5 text-white" /></div>
+            <div className="min-w-0">
+              <div className="text-[13px] font-bold text-white">{pages.length} page{pages.length === 1 ? "" : "s"} built · {live} live</div>
+              <div className="text-[11px] text-slate-500">Build, review and publish landing pages on the dedicated screen.</div>
+            </div>
           </div>
-
-          <div>
-            {loadingSel ? <div className="grid place-items-center py-16 text-slate-600"><Loader2 className="w-6 h-6 animate-spin" /></div>
-              : !sel ? <div className="rounded-xl border border-dashed border-ink-800 py-16 text-center text-[12px] text-slate-500">Build a page or pick one to preview &amp; edit it.</div>
-                : (
-                  <div className="space-y-3">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${sel.status === "Published" ? "bg-emerald-500/15 text-emerald-300" : "bg-amber-500/15 text-amber-300"}`}>{sel.status}</span>
-                      <span className="text-[11px] text-slate-500">/{sel.locale}/{sel.slug}</span>
-                      <div className="ml-auto flex gap-2">
-                        {sel.status === "Published" && <a href={`${PUBLIC_SITE}/${sel.locale}/${sel.slug}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 px-2.5 h-8 rounded-lg border border-ink-700 text-slate-300 text-[11px] font-bold hover:bg-ink-800">Open live <ArrowRight className="w-3 h-3" /></a>}
-                        <button onClick={publish} disabled={pubBusy} className="inline-flex items-center gap-1 px-3 h-8 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold disabled:opacity-50">{pubBusy ? <Loader2 className="w-3 h-3 animate-spin" /> : <Globe className="w-3 h-3" />}{sel.status === "Published" ? "Re-publish" : "Publish live"}</button>
-                      </div>
-                    </div>
-
-                    {/* LIVE PREVIEW */}
-                    <div className="rounded-xl border border-ink-800 bg-white overflow-hidden max-h-[460px] overflow-y-auto">
-                      <div className="bg-gradient-to-br from-blue-600 to-violet-700 text-white p-5">
-                        <div className="text-[10px] uppercase tracking-wide text-white/70">Live preview</div>
-                        <h1 className="text-2xl font-extrabold mt-1 leading-tight">{sel.heroTitle}</h1>
-                        {sel.heroSubtitle && <p className="text-sm font-semibold text-white/90 mt-1.5">{sel.heroSubtitle}</p>}
-                        {sel.heroIntro && <p className="text-[12px] text-white/80 mt-2 leading-relaxed">{sel.heroIntro}</p>}
-                      </div>
-                      <div className="p-5 space-y-4">
-                        {sel.sections.map((s, i) => (<div key={i}><h2 className="text-base font-bold text-slate-900">{s.heading}</h2><p className="text-[13px] text-slate-600 mt-1 leading-relaxed">{s.body}</p></div>))}
-                        {sel.faq.length > 0 && <div><h2 className="text-base font-bold text-slate-900 mb-2">FAQ</h2><div className="space-y-2">{sel.faq.map((f, i) => (<div key={i}><div className="text-[13px] font-semibold text-slate-900">{f.q}</div><div className="text-[12px] text-slate-600 mt-0.5">{f.a}</div></div>))}</div></div>}
-                        <div className="text-[10px] text-slate-400 pt-2 border-t border-slate-100">+ on the real page: provider comparison, top options &amp; market stats — all live from the DB.</div>
-                      </div>
-                    </div>
-
-                    {/* AI EDIT */}
-                    <form onSubmit={(e) => { e.preventDefault(); applyEdit(); }} className="flex items-center gap-2">
-                      <div className="relative flex-1"><Wand2 className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" /><input value={instr} onChange={(e) => setInstr(e.target.value)} placeholder={'Tell the agent what to change — e.g. "make the hero punchier" or "rewrite section 2 about prices"'} className="w-full rounded-lg border border-ink-700 bg-ink-900 pl-9 pr-3 h-10 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-brand-500" /></div>
-                      <button type="submit" disabled={editBusy || !instr.trim()} className="inline-flex items-center gap-1.5 px-4 h-10 rounded-lg bg-gradient-to-r from-brand-500 to-violet-600 text-white text-sm font-bold disabled:opacity-50 shrink-0">{editBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />} Apply edit</button>
-                    </form>
-                  </div>
-                )}
-          </div>
+          <button onClick={() => router.push("/page-builder")} className="inline-flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-[12px] font-bold bg-brand-600 text-white hover:bg-brand-500 transition-colors shrink-0">
+            <Wand2 className="w-3.5 h-3.5" /> Open Page Builder <ArrowRight className="w-3.5 h-3.5" />
+          </button>
         </div>
+        {pages.length > 0 && (
+          <ul className="mt-3 space-y-1.5">
+            {pages.slice(0, 3).map((p) => (
+              <li key={p._id}>
+                <button onClick={() => router.push("/page-builder")} className="w-full text-left flex items-center gap-2 rounded-lg border border-ink-800 bg-ink-950/40 px-3 py-2 hover:bg-ink-900/60 transition-colors group">
+                  <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${p.status === "Published" ? "bg-emerald-500/15 text-emerald-300" : "bg-amber-500/15 text-amber-300"}`}>{p.status}</span>
+                  <span className="min-w-0 flex-1 text-[11px] text-slate-300 group-hover:text-white transition-colors truncate">{p.heroTitle}</span>
+                  <span className="text-[10px] text-slate-600 shrink-0">/{p.locale}/{p.slug}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
       </Panel>
     </FadeUp>
   );

@@ -6,7 +6,7 @@ import {
   Sparkles, LogOut, ExternalLink,
   LayoutDashboard, Crown, MessageSquare, ListChecks, Gavel,
   Megaphone, Search, PenLine, Send, Share2, Radar, Briefcase, UserCheck, Network, Link2,
-  BarChart3,
+  BarChart3, LayoutTemplate,
 } from "lucide-react";
 import { logout } from "@/lib/api";
 import { StatusDot } from "@/components/motion";
@@ -29,6 +29,7 @@ const GROUPS: NavGroup[] = [
       { label: "Task Center", icon: ListChecks, href: "/tasks", dot: true },
       { label: "Marketing Director", icon: Megaphone, href: "/agents/marketing", dot: true },
       { label: "SEO Agent", icon: Search, href: "/agents/seo", dot: true },
+      { label: "Page Builder", icon: LayoutTemplate, href: "/page-builder", dot: true },
       { label: "Copywriter Agent", icon: PenLine, href: "/agents/copywriter", dot: true },
       { label: "Publisher Agent", icon: Send, href: "/agents/publisher", dot: true },
       { label: "Sales Agent", icon: Briefcase, href: "/agents/sales", dot: true },

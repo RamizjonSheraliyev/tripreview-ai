@@ -12,6 +12,7 @@ import AgentGate from "@/components/AgentGate";
 import { FadeUp, Stagger, Item, motion } from "@/components/motion";
 import {
   fetchMe, getStoredUser, getOnboardingOverview, getOnboardingProviders, getClaimRequests, getVerificationCenter, getProfileCompletion, getServiceListings, setListingStatus, getSubscriptions, updateSubscriptionPlan, getApprovalQueue, queueAction, getMissingInformation, getOnboardingFunnel, getBadgeCenter, onbVerify, onbActivate, onbReject, onbRequestInfo,
+  getGrowthJobs, startDiscoverySweep, startReviewHarvest, type GrowthJob,
   type OnboardingOverview, type OnbProvider, type ClaimRequestsData, type VerificationData, type CompletionData, type CompletionRow, type ServiceListingsData, type ServiceRow, type SubscriptionsData, type SubPackage, type ApprovalQueueData, type QueueRow, type MissingInfoData, type MissingRow, type FunnelData, type BadgeCenterData, type BadgeRow, type Kpi, type Seg,
 } from "@/lib/api";
 
@@ -75,6 +76,39 @@ export default function OnboardingPage() {
   useEffect(() => { if (ready) load(); }, [ready, load]);
   const flash = (m: string) => { setNote(m); setTimeout(() => setNote(""), 6000); };
 
+  // Growth jobs — discovery sweep + review harvest. Poll while either runs so
+  // the admin watches real progress lines, and refresh the overview when done.
+  const [jobs, setJobs] = useState<{ discovery: GrowthJob; harvest: GrowthJob } | null>(null);
+  const anyRunning = !!(jobs?.discovery.running || jobs?.harvest.running);
+  useEffect(() => {
+    if (!ready) return;
+    let stop = false;
+    const tick = async () => {
+      const j = await getGrowthJobs().catch(() => null);
+      if (stop) return;
+      if (j) {
+        setJobs((prev) => {
+          // A job just finished → pull fresh overview numbers.
+          if (prev && ((prev.discovery.running && !j.discovery.running) || (prev.harvest.running && !j.harvest.running))) void load();
+          return j;
+        });
+      }
+      setTimeout(tick, j && (j.discovery.running || j.harvest.running) ? 4000 : 20000);
+    };
+    tick();
+    return () => { stop = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready]);
+
+  const runSweep = async () => {
+    try { const r = await startDiscoverySweep(8); flash(r.message); setJobs(await getGrowthJobs().catch(() => null) || jobs); }
+    catch (e) { flash(e instanceof Error ? e.message : "Could not start the sweep."); }
+  };
+  const runHarvest = async () => {
+    try { const r = await startReviewHarvest(100); flash(r.message); setJobs(await getGrowthJobs().catch(() => null) || jobs); }
+    catch (e) { flash(e instanceof Error ? e.message : "Could not start the harvest."); }
+  };
+
   if (!ready) return <div className="min-h-screen grid place-items-center bg-ink-950 text-slate-500"><Loader2 className="w-7 h-7 animate-spin" /></div>;
 
   return (
@@ -88,11 +122,41 @@ export default function OnboardingPage() {
           <div className="min-w-0"><div className="flex items-center gap-2"><h1 className="text-base font-bold text-white leading-tight truncate">Provider Onboarding Agent</h1><span className="inline-flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300"><span className="relative flex h-1.5 w-1.5"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-70" /><span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-400" /></span> Active</span></div><p className="text-[11px] text-slate-500 truncate">Helps providers claim, verify, complete & manage their TripReview profiles</p></div>
           <div className="ml-auto flex items-center gap-2">
             {data && <span className="text-[10px] px-2 py-1 rounded-lg border border-ink-700 text-slate-400">{data.meta.totalProviders} providers</span>}
+            <button onClick={runSweep} disabled={jobs?.discovery.running} className="inline-flex items-center gap-1.5 px-3 h-9 rounded-lg bg-brand-600 text-white hover:bg-brand-500 disabled:opacity-50 text-sm font-bold">
+              {jobs?.discovery.running ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />} Find Providers
+            </button>
+            <button onClick={runHarvest} disabled={jobs?.harvest.running} className="inline-flex items-center gap-1.5 px-3 h-9 rounded-lg bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50 text-sm font-bold">
+              {jobs?.harvest.running ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Star className="w-3.5 h-3.5" />} Harvest Reviews
+            </button>
             <button onClick={load} className="inline-flex items-center gap-1.5 px-3 h-9 rounded-lg border border-ink-700 text-slate-300 hover:text-white hover:border-ink-600 text-sm font-medium"><RefreshCw className="w-3.5 h-3.5" /> Refresh</button>
-            <Bell className="w-5 h-5 text-slate-500" />
             <div className="w-8 h-8 rounded-full bg-ink-800 grid place-items-center text-[11px] font-bold text-slate-300">{(user?.name || "A").slice(0, 1)}</div>
           </div>
         </header>
+
+        {/* Live growth-job progress — real log lines from the running job. */}
+        {(anyRunning || jobs?.discovery.log.length || jobs?.harvest.log.length) ? (
+          <div className="px-5 pt-4 grid grid-cols-1 lg:grid-cols-2 gap-3">
+            {([["discovery", "Provider discovery sweep", jobs?.discovery], ["harvest", "Review harvest", jobs?.harvest]] as const).map(([key, label, j]) =>
+              j && (j.running || j.log.length) ? (
+                <div key={key} className={`rounded-xl border p-3 ${j.running ? "border-brand-500/30 bg-brand-500/5" : j.error ? "border-rose-500/30 bg-rose-500/5" : "border-ink-800 bg-ink-900/50"}`}>
+                  <div className="flex items-center gap-2 mb-1.5">
+                    {j.running ? <Loader2 className="w-3.5 h-3.5 animate-spin text-brand-400" /> : j.error ? <XCircle className="w-3.5 h-3.5 text-rose-400" /> : <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />}
+                    <span className="text-[12px] font-bold text-white">{label}</span>
+                    <span className="ml-auto text-[10px] text-slate-500 tabular-nums">
+                      {key === "harvest" ? `${j.stats.added ?? 0}/${j.stats.target ?? 0} reviews` : `${j.stats.created ?? 0} providers · ${j.stats.categories ?? 0} categories`}
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-slate-400 truncate">{j.progress || "—"}</div>
+                  {j.running && j.log.length > 1 && (
+                    <div className="mt-1.5 max-h-20 overflow-y-auto scrollbar-thin space-y-0.5">
+                      {j.log.slice(-6).map((l, i) => <div key={i} className="text-[10px] text-slate-600 font-mono truncate">{l}</div>)}
+                    </div>
+                  )}
+                </div>
+              ) : null
+            )}
+          </div>
+        ) : null}
 
         <div className="border-b border-ink-800 px-5 overflow-x-auto scrollbar-thin"><div className="flex gap-1">{TABS.map((t) => <button key={t} onClick={() => setTab(t)} className={`relative px-3.5 py-3 text-[13px] font-medium whitespace-nowrap ${tab === t ? "text-white" : "text-slate-500 hover:text-slate-300"}`}>{t}{tab === t && <motion.span layoutId="onbTab" className="absolute left-2 right-2 -bottom-px h-0.5 rounded-full bg-brand-500" />}</button>)}</div></div>
 
@@ -209,7 +273,7 @@ function Overview({ data, go }: { data: OnboardingOverview; go: (t: string) => v
             <div className="space-y-1.5 flex-1">{data.topCategories.items.map((s) => (<div key={s.label} className="flex items-center gap-2 text-[12px]"><span className="w-2.5 h-2.5 rounded-full" style={{ background: s.color }} /><span className="text-slate-400 flex-1 truncate">{s.label}</span><span className="font-bold text-white">{s.count}</span><span className="text-slate-600 text-[10px]">{s.pct}%</span></div>))}</div>
           </div>
         </Card></FadeUp>
-        <FadeUp><Card title="Recent Onboarding Activity" right={<ViewAll />}>
+        <FadeUp><Card title="Recent Onboarding Activity">
           {data.activity.length === 0 ? <div className="text-[12px] text-slate-500 py-4">No recent activity.</div> :
             <div className="space-y-2.5">{data.activity.map((a, i) => (<div key={i} className="flex items-start gap-2.5"><span className={`w-6 h-6 rounded-lg grid place-items-center shrink-0 ${a.status === "success" ? "bg-emerald-500/15 text-emerald-300" : "bg-sky-500/15 text-sky-300"}`}><CheckCircle2 className="w-3.5 h-3.5" /></span><div className="min-w-0 flex-1"><div className="text-[12px] text-white font-medium truncate">{a.title}</div><div className="text-[11px] text-slate-500 truncate">{a.detail}</div></div><span className="text-[10px] text-slate-600 whitespace-nowrap">{ago(a.at)}</span></div>))}</div>}
         </Card></FadeUp>
@@ -486,7 +550,7 @@ function ClaimRequestsView({ flash, reload }: { flash: (m: string) => void; relo
           <div className="text-[10px] text-slate-500 mb-2">Average Score</div>
           <div className="space-y-2">{d.scoreOverview.bands.map((b) => (<div key={b.label}><div className="flex items-center justify-between text-[11px] mb-0.5"><span className="text-slate-400">{b.label}</span><span className="font-bold text-white">{b.count} · {b.pct}%</span></div><Bar pct={b.pct} color={b.color} /></div>))}</div>
         </Card></FadeUp>
-        <FadeUp><Card title="Recent Activity" right={<ViewAll />}>
+        <FadeUp><Card title="Recent Activity">
           {d.activity.length === 0 ? <div className="text-[12px] text-slate-500 py-2">No recent activity.</div> :
             <div className="space-y-2.5">{d.activity.map((a, i) => (<div key={i} className="flex items-start gap-2"><span className={`w-5 h-5 rounded-md grid place-items-center shrink-0 mt-0.5 ${a.status === "success" ? "bg-emerald-500/15 text-emerald-300" : "bg-sky-500/15 text-sky-300"}`}><CheckCircle2 className="w-3 h-3" /></span><div className="min-w-0 flex-1"><div className="text-[11.5px] text-white truncate">{a.title}</div><div className="text-[10px] text-slate-500 truncate">{a.detail} · {ago(a.at)}</div></div></div>))}</div>}
         </Card></FadeUp>

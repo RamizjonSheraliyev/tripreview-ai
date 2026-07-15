@@ -7,7 +7,7 @@ import {
   Sparkles, MessageSquare, Loader2, RefreshCw, Bell, Users, AlertTriangle, FileText,
   CheckCircle2, X, GitBranch, Globe, Wand2, ChevronDown, Paperclip, Plus, MoreHorizontal,
   Mail, Calendar, Eye, Award, AtSign, Clock, Zap, Download, Copy, Trash2, Smartphone, FileText as FileIcon,
-  Mic, Volume2, VolumeX,
+  Mic, Volume2, VolumeX, Check,
 } from "lucide-react";
 import Sidebar from "@/components/Sidebar";
 import { FadeUp, motion } from "@/components/motion";
@@ -16,7 +16,7 @@ import { speakReply, stopSpeaking, sttSupported, createRecognizer } from "@/lib/
 import {
   fetchMe, getStoredUser, getWorkforce, getTeam, agentChat, getCeoOrchestration,
   getAgentToggles, setAgentEnabled,
-  chatHistoryApi, chatSendApi, chatActApi, type ChatMsg, type ChatCard,
+  chatHistoryApi, chatSendApi, chatActApi, type ChatMsg, type ChatCard, type ChatStep,
   listAnnouncements, getAnnouncement, getAnnouncementStats, createAnnouncement, updateAnnouncement, deleteAnnouncement,
   getWorkflows,
   getAlertStats, listAlerts, getAlertById, alertAction,
@@ -43,12 +43,30 @@ type Tab = (typeof TABS)[number];
 type Msg = {
   id: number; role: "founder" | "agent"; agentId?: string; name?: string; text: string; ts: number; image?: string;
   // Persisted task-card fields (from the chat/send + chat/act endpoints).
-  sid?: string; card?: ChatCard | null; actionStatus?: string; actionResult?: string;
+  sid?: string; card?: ChatCard | null; actionStatus?: string; actionResult?: string; steps?: ChatStep[];
 };
 const fromServer = (m: ChatMsg, id: number): Msg => ({
   id, sid: m.id, role: m.role, agentId: m.agentId || undefined, name: m.name || undefined,
-  text: m.text, ts: new Date(m.createdAt).getTime(), card: m.card, actionStatus: m.actionStatus, actionResult: m.actionResult,
+  text: m.text, ts: new Date(m.createdAt).getTime(), card: m.card, actionStatus: m.actionStatus,
+  actionResult: m.actionResult, steps: m.steps || [],
 });
+
+// The work an agent actually did before it spoke. Shown above the reply so the
+// founder can see it acted on live data instead of taking its word for it.
+function Steps({ steps }: { steps: ChatStep[] }) {
+  if (!steps.length) return null;
+  return (
+    <div className="mb-1.5 space-y-0.5">
+      {steps.map((s, i) => (
+        <div key={i} className="flex items-center gap-1.5 text-[10px] text-slate-500">
+          {s.ok ? <Check className="w-3 h-3 text-emerald-500 shrink-0" /> : <X className="w-3 h-3 text-rose-500 shrink-0" />}
+          <span className="font-mono text-slate-600">{s.tool}</span>
+          {s.summary && <span className="truncate">— {s.summary}</span>}
+        </div>
+      ))}
+    </div>
+  );
+}
 type ImgAtt = { base64: string; type: string; preview: string };
 
 // Downscale an image to ≤1280px JPEG so it fits the API limit.
@@ -70,8 +88,10 @@ async function fileToImg(file: File): Promise<ImgAtt> {
 function TaskCard({ msg, busy, onAct }: { msg: Msg; busy: boolean; onAct: (d: "approve" | "reject") => void }) {
   const c = msg.card!;
   const pending = msg.actionStatus === "pending";
+  const running = msg.actionStatus === "running";
   const approved = msg.actionStatus === "approved";
   const rejected = msg.actionStatus === "rejected";
+  const failed = msg.actionStatus === "failed";
   return (
     <div className="rounded-2xl rounded-tl-md border border-ink-700 bg-ink-950/70 overflow-hidden max-w-lg">
       {msg.text && <div className="px-3.5 pt-2.5 text-[13px] text-slate-200 leading-relaxed">{msg.text}</div>}
@@ -135,6 +155,17 @@ function TaskCard({ msg, busy, onAct }: { msg: Msg; busy: boolean; onAct: (d: "a
                 <Globe className="w-3 h-3" /> {l.label}
               </a>
             ))}
+          </div>
+        )}
+        {running && (
+          <div className="rounded-lg px-2.5 py-2 text-[11px] leading-relaxed border border-amber-500/20 bg-amber-500/5 text-amber-200 flex items-center gap-2">
+            <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+            <span><span className="font-bold">Working on it</span> — this takes a few minutes. It&apos;ll post here when it&apos;s done; you can carry on in the meantime.</span>
+          </div>
+        )}
+        {failed && (
+          <div className="rounded-lg px-2.5 py-2 text-[11px] leading-relaxed border border-rose-500/20 bg-rose-500/5 text-rose-200">
+            <span className="font-bold">Didn&apos;t go through</span>{msg.actionResult ? ` — ${msg.actionResult}` : ""}
           </div>
         )}
         {(approved || rejected) && (
@@ -341,11 +372,19 @@ function GroupChat({ wf }: { wf: Workforce | null; group: boolean }) {
     if (p) { sessionStorage.removeItem("comm-prefill"); setSeed({ text: p, key: "k" + MID++ }); }
   }, []);
 
-  // Persisted history — the group chat (and each DM) survives reloads.
+  // Persisted history — the group chat (and each DM) survives reloads. If a job
+  // was still running when the page was closed, pick the watch back up so the
+  // result lands here rather than being lost with the tab.
   useEffect(() => {
     let off = false;
-    chatHistoryApi(to || "all").then((r) => { if (!off) setMsgs(r.messages.map((m, i) => fromServer(m, MID++ + i))); }).catch(() => {});
+    chatHistoryApi(to || "all").then((r) => {
+      if (off) return;
+      setMsgs(r.messages.map((m, i) => fromServer(m, MID++ + i)));
+      const live = r.messages.find((m) => m.actionStatus === "running");
+      if (live) watchJob(live.id);
+    }).catch(() => {});
     return () => { off = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [to]);
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [msgs, busy]);
@@ -384,12 +423,31 @@ function GroupChat({ wf }: { wf: Workforce | null; group: boolean }) {
   // Approve / Reject a task card — runs the REAL backend action, then swaps in
   // the decided card (with its result / diff / live links).
   const [actBusy, setActBusy] = useState<string | null>(null);
+  // Watch a background job (writing an article takes minutes) until the backend
+  // flips it off "running", pulling in the agent's follow-up message when it
+  // lands. Polling, not a blocked request — the browser stays usable.
+  const watchJob = (sid: string) => {
+    const started = Date.now();
+    const tick = async () => {
+      if (Date.now() - started > 15 * 60 * 1000) return; // give up after 15 min
+      const r = await chatHistoryApi(to || "all").catch(() => null);
+      if (!r) { setTimeout(tick, 8000); return; }
+      setMsgs(r.messages.map((m, i) => fromServer(m, MID++ + i)));
+      const job = r.messages.find((m) => m.id === sid);
+      if (job && job.actionStatus === "running") setTimeout(tick, 5000);
+    };
+    setTimeout(tick, 5000);
+  };
+
   const act = async (m: Msg, decision: "approve" | "reject") => {
     if (!m.sid || actBusy) return;
     setActBusy(m.sid);
     try {
       const r = await chatActApi(m.sid, decision);
-      if (r.ok && r.msg) setMsgs((all) => all.map((x) => (x.sid === m.sid ? { ...x, card: r.msg!.card, actionStatus: r.msg!.actionStatus, actionResult: r.msg!.actionResult } : x)));
+      if (r.ok && r.msg) {
+        setMsgs((all) => all.map((x) => (x.sid === m.sid ? { ...x, card: r.msg!.card, actionStatus: r.msg!.actionStatus, actionResult: r.msg!.actionResult } : x)));
+        if (r.running && m.sid) watchJob(m.sid);
+      }
       else if (!r.ok) setMsgs((all) => [...all, { id: MID++, role: "agent", agentId: m.agentId, name: m.name, text: `⚠ ${r.message || "Action failed."}`, ts: Date.now() }]);
     } catch {
       setMsgs((all) => [...all, { id: MID++, role: "agent", agentId: "ceo", name: "AI CEO / Orchestrator", text: "⚠ Couldn't execute the action — check the backend.", ts: Date.now() }]);
@@ -468,6 +526,7 @@ function GroupChat({ wf }: { wf: Workforce | null; group: boolean }) {
                 <span className="w-8 h-8 rounded-lg bg-brand-600/15 text-brand-300 grid place-items-center shrink-0 mt-0.5"><Icon className="w-4 h-4" /></span>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 mb-0.5"><span className="text-[11px] font-bold text-white">{m.name}</span><span className="text-[9px] text-slate-600">{time}</span>{m.agentId === "ceo" && <span className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-brand-500/15 text-brand-300">BROADCAST</span>}</div>
+                  <Steps steps={m.steps || []} />
                   {m.card ? (
                     <TaskCard msg={m} busy={actBusy === m.sid} onAct={(d) => act(m, d)} />
                   ) : (

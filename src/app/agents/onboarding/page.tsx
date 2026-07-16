@@ -105,7 +105,7 @@ export default function OnboardingPage() {
     catch (e) { flash(e instanceof Error ? e.message : "Could not start the sweep."); }
   };
   const runHarvest = async () => {
-    try { const r = await startReviewHarvest(100); flash(r.message); setJobs(await getGrowthJobs().catch(() => null) || jobs); }
+    try { const r = await startReviewHarvest(800, 120); flash(r.message); setJobs(await getGrowthJobs().catch(() => null) || jobs); }
     catch (e) { flash(e instanceof Error ? e.message : "Could not start the harvest."); }
   };
 

@@ -13,6 +13,8 @@ import { FadeUp, Stagger, Item, motion } from "@/components/motion";
 import {
   fetchMe, getStoredUser, listLandingPages, getLandingPageById, generateLandingPage,
   editLandingPageAI, publishLandingPage, getPageTemplate, reviewLandingPage, applyLandingAdvice,
+  unpublishLandingPage, setLandingPageCategory, deleteLandingPage, getLandingLiveStats,
+  getSiteBlocks, saveSiteBlock, resetSiteBlock, type SiteBlocksData,
   type GeneratedPage, type LandingPageFull, type TemplateBlock, type LandingTeamMember,
   type LandingReview, type LandingFinding, type LandingChange,
 } from "@/lib/api";
@@ -28,7 +30,7 @@ const AGENT_ICON: Record<string, React.ElementType> = { seo: Search, marketing: 
 const SOURCE_META: Record<string, { label: string; hint: string; cls: string; Icon: React.ElementType }> = {
   ai: { label: "Agent copy", hint: "Written by the agents — editable here", cls: "bg-brand-500/10 text-brand-300 border-brand-500/25", Icon: Sparkles },
   live: { label: "Live data", hint: "Pulled from the marketplace when the page loads", cls: "bg-emerald-500/10 text-emerald-300 border-emerald-500/25", Icon: Database },
-  static: { label: "Fixed", hint: "Same house block on every landing page", cls: "bg-ink-800 text-slate-400 border-ink-700", Icon: Lock },
+  static: { label: "House block", hint: "Same on every landing page — words & links editable here", cls: "bg-ink-800 text-slate-400 border-ink-700", Icon: Lock },
 };
 
 const words = (s: string) => String(s || "").trim().split(/\s+/).filter(Boolean).length;
@@ -72,6 +74,130 @@ type Sel =
   | { t: "section"; d: { heading: string; body: string }; i: number }
   | { t: "faq"; d: { q: string; a: string }; i: number };
 
+// House blocks the admin can edit right here (the former "Fixed" ones).
+const EDITABLE_HOUSE = new Set(["cards", "features", "trust", "bestof", "community"]);
+
+const inputCls = "w-full bg-ink-950 border border-ink-800 rounded-lg px-2 py-1.5 text-[11px] text-white placeholder:text-slate-600 focus:outline-none focus:border-brand-500/50";
+
+// Editor for one house block. Words + links only — icons and photos are code.
+function HouseBlockEditor({ blockKey, category, blocks, onSaved }: {
+  blockKey: string; category: string; blocks: SiteBlocksData; onSaved: (msg: string) => void;
+}) {
+  const init = blockKey === "cards" ? blocks.cards : (blocks as unknown as Record<string, unknown>)[blockKey];
+  const [draft, setDraft] = useState<unknown>(JSON.parse(JSON.stringify(init)));
+  const [busy, setBusy] = useState("");
+
+  const save = async () => {
+    setBusy("save");
+    try { await saveSiteBlock(blockKey, draft); onSaved("✓ Saved — the live site shows it on the next page load."); }
+    catch (e) { onSaved(e instanceof Error ? e.message : "Save failed."); }
+    finally { setBusy(""); }
+  };
+  const reset = async () => {
+    setBusy("reset");
+    try { const r = await resetSiteBlock(blockKey); setDraft(JSON.parse(JSON.stringify(blockKey === "cards" ? (r.data as SiteBlocksData["cards"]) : r.data))); onSaved("Reset to the shipped default."); }
+    catch (e) { onSaved(e instanceof Error ? e.message : "Reset failed."); }
+    finally { setBusy(""); }
+  };
+
+  const Row = ({ children }: { children: React.ReactNode }) => <div className="flex items-center gap-1.5">{children}</div>;
+  const Label = ({ children }: { children: React.ReactNode }) => <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mt-3 mb-1.5">{children}</div>;
+
+  let body: React.ReactNode = null;
+  if (blockKey === "features") {
+    const d = draft as { title: string; sub: string }[];
+    body = (
+      <>
+        <Label>5 promises — title + one-liner (icons stay)</Label>
+        <div className="space-y-1.5">{d.map((f, i) => (
+          <Row key={i}>
+            <input className={inputCls} value={f.title} onChange={(e) => { const n = [...d]; n[i] = { ...n[i], title: e.target.value }; setDraft(n); }} />
+            <input className={inputCls} value={f.sub} onChange={(e) => { const n = [...d]; n[i] = { ...n[i], sub: e.target.value }; setDraft(n); }} />
+          </Row>
+        ))}</div>
+      </>
+    );
+  } else if (blockKey === "bestof") {
+    const d = draft as { label: string; href: string }[];
+    body = (
+      <>
+        <Label>6 cards — label + on-site link (photos stay)</Label>
+        <div className="space-y-1.5">{d.map((b, i) => (
+          <Row key={i}>
+            <input className={inputCls} value={b.label} onChange={(e) => { const n = [...d]; n[i] = { ...n[i], label: e.target.value }; setDraft(n); }} />
+            <input className={inputCls} value={b.href} onChange={(e) => { const n = [...d]; n[i] = { ...n[i], href: e.target.value }; setDraft(n); }} />
+          </Row>
+        ))}</div>
+      </>
+    );
+  } else if (blockKey === "cards") {
+    const all = draft as SiteBlocksData["cards"];
+    const d = all[category] || [];
+    body = (
+      <>
+        <Label>{category} cards — label + link (this page&apos;s set)</Label>
+        <div className="space-y-1.5">{d.map((c, i) => (
+          <Row key={i}>
+            <input className={inputCls} value={c.label} onChange={(e) => { const n = d.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)); setDraft({ ...all, [category]: n }); }} />
+            <input className={inputCls} value={c.href} onChange={(e) => { const n = d.map((x, j) => (j === i ? { ...x, href: e.target.value } : x)); setDraft({ ...all, [category]: n }); }} />
+          </Row>
+        ))}</div>
+      </>
+    );
+  } else if (blockKey === "community") {
+    const d = draft as SiteBlocksData["community"];
+    body = (
+      <>
+        <Label>Community discussions (3)</Label>
+        <div className="space-y-1.5">{d.discussions.map((t, i) => (
+          <input key={i} className={inputCls} value={t} onChange={(e) => setDraft({ ...d, discussions: d.discussions.map((x, j) => (j === i ? e.target.value : x)) })} />
+        ))}</div>
+        <Label>Travel guides (4)</Label>
+        <div className="space-y-1.5">{d.guides.map((t, i) => (
+          <input key={i} className={inputCls} value={t} onChange={(e) => setDraft({ ...d, guides: d.guides.map((x, j) => (j === i ? e.target.value : x)) })} />
+        ))}</div>
+      </>
+    );
+  } else if (blockKey === "trust") {
+    const d = draft as SiteBlocksData["trust"];
+    body = (
+      <>
+        <Label>Transparency score breakdown</Label>
+        <div className="space-y-1.5">{d.scoreItems.map((s, i) => (
+          <Row key={i}>
+            <input className={inputCls} value={s.label} onChange={(e) => setDraft({ ...d, scoreItems: d.scoreItems.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)) })} />
+            <input className={`${inputCls} !w-16 text-center`} value={s.pct} onChange={(e) => setDraft({ ...d, scoreItems: d.scoreItems.map((x, j) => (j === i ? { ...x, pct: Number(e.target.value) || 0 } : x)) })} />
+          </Row>
+        ))}</div>
+        <Label>Average score shown (own the claim)</Label>
+        <input className={inputCls} value={d.avgScore} onChange={(e) => setDraft({ ...d, avgScore: e.target.value })} />
+        <Label>How we verify (5 steps)</Label>
+        <div className="space-y-1.5">{d.verifySteps.map((t, i) => (
+          <input key={i} className={inputCls} value={t} onChange={(e) => setDraft({ ...d, verifySteps: d.verifySteps.map((x, j) => (j === i ? e.target.value : x)) })} />
+        ))}</div>
+        <Label>Ask-AI sample questions (3)</Label>
+        <div className="space-y-1.5">{d.aiQuestions.map((t, i) => (
+          <input key={i} className={inputCls} value={t} onChange={(e) => setDraft({ ...d, aiQuestions: d.aiQuestions.map((x, j) => (j === i ? e.target.value : x)) })} />
+        ))}</div>
+      </>
+    );
+  }
+
+  return (
+    <div>
+      {body}
+      <div className="flex gap-2 mt-4">
+        <button onClick={save} disabled={!!busy} className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl px-4 py-2.5 text-[12px] font-bold bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-40">
+          {busy === "save" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />} Save to live site
+        </button>
+        <button onClick={reset} disabled={!!busy} className="inline-flex items-center gap-1.5 rounded-xl px-3 py-2.5 text-[12px] font-bold text-slate-300 border border-ink-700 hover:bg-ink-800 disabled:opacity-40">
+          {busy === "reset" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null} Reset default
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function PageBuilderPage() {
   const router = useRouter();
   const [ready, setReady] = useState(false);
@@ -99,6 +225,9 @@ export default function PageBuilderPage() {
   const [changes, setChanges] = useState<LandingChange[]>([]);
   const [manual, setManual] = useState<string[]>([]);
   const [flash, setFlash] = useState("");
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [pageBusy, setPageBusy] = useState("");
+  const [liveStats, setLiveStats] = useState<{ providers: number; listings: number; deals: number; reviews: number } | null>(null);
 
   const note = (m: string) => { setFlash(m); setTimeout(() => setFlash(""), 4500); };
 
@@ -114,9 +243,13 @@ export default function PageBuilderPage() {
     return r?.pages || [];
   }, []);
 
+  const [siteBlocks, setSiteBlocks] = useState<SiteBlocksData | null>(null);
+  const reloadSiteBlocks = useCallback(() => getSiteBlocks().then((r) => setSiteBlocks(r.blocks)).catch(() => {}), []);
+
   useEffect(() => {
     if (!ready) return;
     getPageTemplate().then((r) => { setBlocks(r.blocks); setTeam(r.team); }).catch(() => {});
+    void reloadSiteBlocks();
     loadList().then((list) => { if (list[0]) void open(list[0]._id); });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, loadList]);
@@ -189,6 +322,48 @@ export default function PageBuilderPage() {
     catch (e) { note(e instanceof Error ? e.message : "Publish failed."); }
     finally { setPublishing(false); }
   };
+
+  const unpublish = async () => {
+    if (!page) return;
+    setPageBusy("unpublish");
+    try { const r = await unpublishLandingPage(page._id); setPage(r.page); await loadList(); note("Taken offline — back to Draft, removed from the sitemap."); }
+    catch (e) { note(e instanceof Error ? e.message : "Unpublish failed."); }
+    finally { setPageBusy(""); }
+  };
+
+  const removePage = async () => {
+    if (!page) return;
+    if (!window.confirm(`Delete “${page.heroTitle}” permanently? ${page.status === "Published" ? "It is LIVE right now. " : ""}This cannot be undone.`)) return;
+    setPageBusy("delete");
+    try {
+      const r = await deleteLandingPage(page._id);
+      note(`Deleted ${r.deleted}.`);
+      setPage(null); setReviews(null); setChanges([]);
+      const list = await loadList();
+      if (list[0]) void open(list[0]._id);
+    } catch (e) { note(e instanceof Error ? e.message : "Delete failed."); }
+    finally { setPageBusy(""); }
+  };
+
+  const changeCategory = async (cat: string) => {
+    if (!page || cat === page.category) return;
+    setPageBusy("category");
+    try {
+      const r = await setLandingPageCategory(page._id, cat);
+      setPage(r.page); await loadList();
+      note(`Category → ${cat}. The live page now pulls ${cat} cards, providers and deals.`);
+    } catch (e) { note(e instanceof Error ? e.message : "Could not change the category."); }
+    finally { setPageBusy(""); }
+  };
+
+  // Real DB counts behind the live-data blocks — refreshed when the page (or
+  // its category) changes, shown in the block drawer.
+  useEffect(() => {
+    if (!page) { setLiveStats(null); return; }
+    let off = false;
+    getLandingLiveStats(page.category).then((s) => { if (!off) setLiveStats(s); }).catch(() => {});
+    return () => { off = true; };
+  }, [page?.category, page?._id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const liveUrl = page ? `${PUBLIC_SITE}/${page.locale}/${page.slug}` : "";
   const findingsFor = (id: string) => reviews?.find((r) => r.agentId === id)?.findings || [];
@@ -279,21 +454,45 @@ export default function PageBuilderPage() {
                         <div className="min-w-0">
                           <div className="flex items-center gap-2 mb-1.5">
                             <Pill cls={page.status === "Published" ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/25" : "bg-amber-500/15 text-amber-300 border-amber-500/25"}>{page.status}</Pill>
-                            <Pill cls="bg-ink-800 text-slate-400 border-ink-700">{page.category}</Pill>
+                            {/* Category is live-editable: it decides which cards, providers and deals the template pulls. */}
+                            <select
+                              value={page.category}
+                              onChange={(e) => changeCategory(e.target.value)}
+                              disabled={pageBusy === "category"}
+                              className="text-[10px] font-bold bg-ink-800 text-slate-300 border border-ink-700 rounded px-1.5 py-0.5 focus:outline-none focus:border-brand-500/50 disabled:opacity-50"
+                            >
+                              {["Cars", "Yachts", "AirportTransfer", "Activities", "General"].map((c) => <option key={c} value={c}>{c === "AirportTransfer" ? "Airport Transfer" : c}</option>)}
+                            </select>
                             {page.keyword && <Pill cls="bg-sky-500/10 text-sky-300 border-sky-500/25">{page.keyword}</Pill>}
                           </div>
                           <h2 className="text-lg font-bold text-white leading-snug">{page.heroTitle}</h2>
-                          <a href={liveUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] text-brand-400 hover:underline mt-1">
-                            /{page.locale}/{page.slug} <ExternalLink className="w-3 h-3" />
-                          </a>
+                          {page.status === "Published" ? (
+                            <a href={liveUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] text-brand-400 hover:underline mt-1">
+                              /{page.locale}/{page.slug} <ExternalLink className="w-3 h-3" />
+                            </a>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-[11px] text-slate-500 mt-1">/{page.locale}/{page.slug} · not public yet</span>
+                          )}
                         </div>
                         <div className="flex items-center gap-2">
-                          <a href={liveUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-[11px] font-bold text-slate-300 border border-ink-700 hover:bg-ink-800 transition-colors"><ExternalLink className="w-3.5 h-3.5" /> {page.status === "Published" ? "View live" : "Preview"}</a>
-                          {page.status !== "Published" && (
+                          {/* Drafts aren't served by the public site (404) — preview renders in-dashboard. */}
+                          {page.status === "Published" ? (
+                            <a href={liveUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-[11px] font-bold text-slate-300 border border-ink-700 hover:bg-ink-800 transition-colors"><ExternalLink className="w-3.5 h-3.5" /> View live</a>
+                          ) : (
+                            <button onClick={() => setPreviewOpen(true)} className="inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-[11px] font-bold text-slate-300 border border-ink-700 hover:bg-ink-800 transition-colors"><Globe className="w-3.5 h-3.5" /> Preview</button>
+                          )}
+                          {page.status !== "Published" ? (
                             <button onClick={publish} disabled={publishing} className="inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-[11px] font-bold bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-40 transition-colors">
                               {publishing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Rocket className="w-3.5 h-3.5" />} Publish live
                             </button>
+                          ) : (
+                            <button onClick={unpublish} disabled={pageBusy === "unpublish"} className="inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-[11px] font-bold text-amber-300 border border-amber-500/30 hover:bg-amber-500/10 disabled:opacity-40 transition-colors">
+                              {pageBusy === "unpublish" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <X className="w-3.5 h-3.5" />} Unpublish
+                            </button>
                           )}
+                          <button onClick={removePage} disabled={pageBusy === "delete"} className="inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-[11px] font-bold text-rose-300 border border-rose-500/30 hover:bg-rose-500/10 disabled:opacity-40 transition-colors">
+                            {pageBusy === "delete" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <X className="w-3.5 h-3.5" />} Delete
+                          </button>
                         </div>
                       </div>
                     </Panel>
@@ -547,6 +746,56 @@ export default function PageBuilderPage() {
           </motion.div>
         )}
 
+        {/* Draft preview — drafts 404 on the public site (only Published is
+            served), so the copy renders here: hero, sections, FAQ and the
+            Google snippet, in reading order. Live-data blocks are summarised. */}
+        {previewOpen && page && (
+          <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4" onClick={() => setPreviewOpen(false)}>
+            <motion.div initial={{ y: 24, opacity: 0 }} animate={{ y: 0, opacity: 1 }} onClick={(e) => e.stopPropagation()} className="w-full max-w-3xl max-h-[88vh] rounded-2xl bg-white overflow-hidden flex flex-col shadow-2xl">
+              <div className="px-4 h-12 flex items-center gap-2 border-b border-slate-200 shrink-0 bg-slate-50">
+                <Globe className="w-4 h-4 text-slate-500" />
+                <span className="text-[12px] font-bold text-slate-700">Draft preview</span>
+                <span className="text-[11px] text-slate-400 truncate">/{page.locale}/{page.slug}</span>
+                <button onClick={() => setPreviewOpen(false)} className="ml-auto w-8 h-8 grid place-items-center rounded-lg text-slate-500 hover:bg-slate-200"><X className="w-4 h-4" /></button>
+              </div>
+              <div className="flex-1 overflow-y-auto">
+                {/* Google snippet */}
+                <div className="m-4 rounded-xl border border-slate-200 p-3">
+                  <div className="text-[15px] text-blue-700 leading-snug">{page.metaTitle || page.heroTitle}</div>
+                  <div className="text-[11px] text-emerald-700">tripreview.ae › {page.slug}</div>
+                  <div className="text-[12px] text-slate-600 mt-0.5">{page.metaDescription}</div>
+                </div>
+                {/* Hero */}
+                <div className="bg-gradient-to-br from-[#081228] to-[#122448] text-white px-6 py-8">
+                  <h1 className="text-2xl font-extrabold leading-tight">{page.heroTitle}</h1>
+                  {page.heroSubtitle && <p className="text-sm font-semibold text-white/90 mt-2">{page.heroSubtitle}</p>}
+                  {page.heroIntro && <p className="text-[13px] text-white/75 mt-2 leading-relaxed">{page.heroIntro}</p>}
+                </div>
+                <div className="px-6 py-5 space-y-5">
+                  <div className="rounded-lg bg-slate-100 text-slate-500 text-[11px] px-3 py-2">+ on the live page here: category cards, top providers, listings, deals & market stats — all pulled from the real marketplace ({liveStats ? `${liveStats.providers} providers · ${liveStats.listings} listings · ${liveStats.deals} deals` : "live data"}).</div>
+                  {page.sections.map((s, i) => (
+                    <div key={i}><h2 className="text-base font-bold text-slate-900">{s.heading}</h2><p className="text-[13px] text-slate-600 mt-1 leading-relaxed">{s.body}</p></div>
+                  ))}
+                  {page.faq.length > 0 && (
+                    <div>
+                      <h2 className="text-base font-bold text-slate-900 mb-2">FAQ</h2>
+                      <div className="space-y-2.5">
+                        {page.faq.map((f, i) => (
+                          <div key={i}><div className="text-[13px] font-semibold text-slate-900">{f.q}</div><div className="text-[12px] text-slate-600 mt-0.5 leading-relaxed">{f.a}</div></div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="px-4 h-12 flex items-center justify-end gap-2 border-t border-slate-200 shrink-0 bg-slate-50">
+                <button onClick={() => setPreviewOpen(false)} className="text-[12px] font-bold text-slate-500 px-3 py-1.5 rounded-lg hover:bg-slate-200">Close</button>
+                <button onClick={() => { setPreviewOpen(false); void publish(); }} disabled={publishing} className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-bold bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-40"><Rocket className="w-3.5 h-3.5" /> Publish live</button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
         {/* Details drawer */}
         {sel && (
           <div className="fixed inset-0 z-50 flex justify-end bg-black/50" onClick={() => setSel(null)}>
@@ -582,8 +831,37 @@ export default function PageBuilderPage() {
                           <PenLine className="w-3.5 h-3.5" /> Edit this copy <ArrowRight className="w-3.5 h-3.5" />
                         </button>
                       )}
-                      {sel.d.source === "live" && <p className="text-[11px] text-slate-500 leading-relaxed">Nothing to write here — the block fills itself from real providers, listings and deals. Change the page category to change what it shows.</p>}
-                      {sel.d.source === "static" && <p className="text-[11px] text-slate-500 leading-relaxed">Fixed in the site template. Changing it means changing the code, not the page.</p>}
+                      {sel.d.source === "live" && (
+                        <>
+                          <p className="text-[11px] text-slate-500 leading-relaxed">Nothing to write here — the block fills itself from real providers, listings and deals. Change the page category (header dropdown) to change what it shows.</p>
+                          {liveStats && (
+                            <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-3">
+                              <div className="text-[10px] font-bold text-emerald-300 uppercase tracking-wide mb-2">What it renders right now — {page?.category}</div>
+                              <div className="grid grid-cols-2 gap-2">
+                                {([["Providers", liveStats.providers], ["Listings", liveStats.listings], ["Deals", liveStats.deals], ["Approved reviews", liveStats.reviews]] as const).map(([l, v]) => (
+                                  <div key={l} className="rounded-lg bg-ink-950/40 border border-ink-800 px-2.5 py-2">
+                                    <div className="text-base font-bold text-white tabular-nums">{v}</div>
+                                    <div className="text-[10px] text-slate-500">{l}</div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </>
+                      )}
+                      {sel.d.source === "static" && (
+                        EDITABLE_HOUSE.has(sel.d.key) && siteBlocks ? (
+                          <HouseBlockEditor
+                            key={sel.d.key}
+                            blockKey={sel.d.key}
+                            category={page?.category || "General"}
+                            blocks={siteBlocks}
+                            onSaved={(m) => { note(m); void reloadSiteBlocks(); }}
+                          />
+                        ) : (
+                          <p className="text-[11px] text-slate-500 leading-relaxed">Fixed in the site template. Changing it means changing the code, not the page.</p>
+                        )
+                      )}
                     </>
                   );
                 })()}

@@ -403,8 +403,10 @@ export function getGrowthJobs() {
 export function startDiscoverySweep(perCategory = 8) {
   return request<{ ok: boolean; started?: boolean; message: string }>("/admin/agents/growth/discover-sweep", { method: "POST", body: JSON.stringify({ perCategory }) });
 }
-export function startReviewHarvest(target = 100) {
-  return request<{ ok: boolean; started?: boolean; message: string }>("/admin/agents/growth/harvest-reviews", { method: "POST", body: JSON.stringify({ target }) });
+export function startReviewHarvest(target = 800, perProvider = 120) {
+  // Deep mode: walks car & yacht companies first and keeps searching per
+  // company (platform by platform) until 100+ reviews or the web runs dry.
+  return request<{ ok: boolean; started?: boolean; message: string }>("/admin/agents/growth/harvest-reviews", { method: "POST", body: JSON.stringify({ target, perProvider }) });
 }
 
 // Agent master switches — OFF by default; admin flips them on to activate (token-saving).
@@ -674,6 +676,37 @@ export function editLandingPageAI(id: string, instruction: string) {
 }
 export function publishLandingPage(id: string) {
   return request<{ ok: boolean; page: LandingPageFull }>(`/admin/agents/ceo/pages/${id}/publish`, { method: "POST" });
+}
+export function unpublishLandingPage(id: string) {
+  return request<{ ok: boolean; page: LandingPageFull }>(`/admin/agents/ceo/pages/${id}/unpublish`, { method: "POST" });
+}
+export function setLandingPageCategory(id: string, category: string) {
+  return request<{ ok: boolean; page: LandingPageFull }>(`/admin/agents/ceo/pages/${id}`, { method: "PATCH", body: JSON.stringify({ category }) });
+}
+export function deleteLandingPage(id: string) {
+  return request<{ ok: boolean; deleted: string }>(`/admin/agents/ceo/pages/${id}`, { method: "DELETE" });
+}
+/** Real DB counts the live-data blocks would render for this category. */
+export function getLandingLiveStats(category: string) {
+  return request<{ category: string; providers: number; listings: number; deals: number; reviews: number }>(`/admin/agents/ceo/pages/live-stats?category=${encodeURIComponent(category)}`);
+}
+
+// ---- House blocks: the template's fixed parts, now editable ----
+export type SiteBlocksData = {
+  features: { title: string; sub: string }[];
+  trust: { scoreItems: { label: string; pct: number }[]; avgScore: string; verifySteps: string[]; aiQuestions: string[] };
+  bestof: { label: string; href: string }[];
+  community: { discussions: string[]; guides: string[] };
+  cards: Record<string, { label: string; href: string }[]>;
+};
+export function getSiteBlocks() {
+  return request<{ blocks: SiteBlocksData }>("/admin/agents/ceo/pages/blocks");
+}
+export function saveSiteBlock(key: string, data: unknown) {
+  return request<{ ok: boolean; key: string; data: unknown }>(`/admin/agents/ceo/pages/blocks/${key}`, { method: "PUT", body: JSON.stringify({ data }) });
+}
+export function resetSiteBlock(key: string) {
+  return request<{ ok: boolean; key: string; data: unknown }>(`/admin/agents/ceo/pages/blocks/${key}`, { method: "DELETE" });
 }
 
 // ---- Task Orchestration ----

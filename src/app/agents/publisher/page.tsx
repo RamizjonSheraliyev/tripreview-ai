@@ -28,7 +28,44 @@ const STATUS_TONE: Record<string, string> = { Draft: "bg-slate-500/15 text-slate
 function Card({ title, children, right, sub }: { title: string; children: React.ReactNode; right?: React.ReactNode; sub?: string }) {
   return <div className="rounded-2xl border border-ink-800 bg-ink-900/50 p-4 h-full"><div className="flex items-start justify-between gap-2 mb-3"><div><div className="text-[13px] font-bold text-white">{title}</div>{sub && <div className="text-[10px] text-slate-500">{sub}</div>}</div>{right}</div>{children}</div>;
 }
-const ViewAll = ({ label = "View All" }: { label?: string }) => <span className="inline-flex items-center gap-1 text-[10px] text-brand-400 font-semibold cursor-default">{label} <ArrowRight className="w-3 h-3" /></span>;
+// A "View All" that goes nowhere is a lie — it renders nothing without a target.
+const ViewAll = ({ label = "View All", onClick }: { label?: string; onClick?: () => void }) =>
+  onClick ? <button onClick={onClick} className="inline-flex items-center gap-1 text-[10px] text-brand-400 font-semibold hover:text-brand-300 transition-colors">{label} <ArrowRight className="w-3 h-3" /></button> : null;
+
+// Details drawer — every row on this page opens its real record.
+type PDetail = { title: string; subtitle?: string; badge?: { label: string; cls: string }; rows: [string, string][]; why?: string; note?: string; cta?: { label: string; go: () => void } };
+function PublisherDetails({ d, onClose }: { d: PDetail; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end bg-black/50" onClick={onClose}>
+      <motion.div initial={{ x: 460 }} animate={{ x: 0 }} transition={{ type: "spring", damping: 26, stiffness: 240 }} onClick={(e) => e.stopPropagation()} className="w-full max-w-md h-full bg-ink-900 border-l border-ink-800 flex flex-col">
+        <div className="h-16 px-4 flex items-center gap-2 border-b border-ink-800 shrink-0">
+          {d.badge && <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${d.badge.cls}`}>{d.badge.label}</span>}
+          <span className="text-sm font-bold text-white">Details</span>
+          <button onClick={onClose} className="ml-auto w-8 h-8 grid place-items-center rounded-lg text-slate-400 hover:bg-ink-800"><X className="w-4 h-4" /></button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin">
+          <div>
+            <h3 className="text-base font-bold text-white leading-snug">{d.title}</h3>
+            {d.subtitle && <p className="text-[12px] text-slate-400 mt-1 leading-relaxed whitespace-pre-line">{d.subtitle}</p>}
+          </div>
+          {d.rows.length > 0 && (
+            <div className="rounded-xl border border-ink-800 bg-ink-950/40 divide-y divide-ink-800">
+              {d.rows.map(([k, v]) => (
+                <div key={k} className="flex items-start justify-between gap-3 px-3 py-2">
+                  <span className="text-[11px] text-slate-500 shrink-0">{k}</span>
+                  <span className="text-[11px] font-semibold text-slate-200 text-right break-all">{v}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          {d.why && <div className="rounded-xl border border-ink-800 bg-ink-950/40 p-3"><div className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Why it matters</div><p className="text-[12px] text-slate-300 leading-relaxed">{d.why}</p></div>}
+          {d.note && <p className="text-[10px] text-slate-500 leading-relaxed">{d.note}</p>}
+          {d.cta && <button onClick={d.cta.go} className="w-full rounded-xl px-4 py-2.5 text-[12px] font-bold bg-brand-600 text-white hover:bg-brand-500 inline-flex items-center justify-center gap-1.5">{d.cta.label} <ArrowRight className="w-3.5 h-3.5" /></button>}
+        </div>
+      </motion.div>
+    </div>
+  );
+}
 function Trend({ n }: { n: number }) { if (!n) return <span className="text-[10px] text-slate-500">No change</span>; const up = n > 0; return <span className={`text-[10px] inline-flex items-center gap-0.5 ${up ? "text-emerald-400" : "text-rose-400"}`}>{up ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}{Math.abs(n)}% <span className="text-slate-600">vs last period</span></span>; }
 const ago = (d?: string | null) => { if (!d) return "—"; const s = Math.floor((Date.now() - new Date(d).getTime()) / 1000); if (s < 0) { const f = -s; return f < 3600 ? `in ${Math.max(1, Math.floor(f / 60))}m` : f < 86400 ? `in ${Math.floor(f / 3600)}h` : `in ${Math.floor(f / 86400)}d`; } if (s < 60) return "just now"; if (s < 3600) return `${Math.floor(s / 60)}m ago`; if (s < 86400) return `${Math.floor(s / 3600)}h ago`; return `${Math.floor(s / 86400)}d ago`; };
 
@@ -85,7 +122,7 @@ export default function PublisherPage() {
 
         <div className="p-5">
           {loading || !data ? <div className="grid place-items-center py-32 text-slate-600"><Loader2 className="w-8 h-8 animate-spin" /></div>
-            : tab === "Overview" ? <Overview data={data} onCreate={() => setCreateOpen(true)} flash={flash} reload={load} />
+            : tab === "Overview" ? <Overview data={data} onCreate={() => setCreateOpen(true)} flash={flash} reload={load} goTab={setTab} />
             : tab === "Content Queue" ? <QueueBoardTab flash={flash} onAdd={() => setCreateOpen(true)} />
             : tab === "Published Content" ? <PublishedTab />
             : tab === "Distribution Channels" || tab === "Settings" ? <ChannelsTab flash={flash} settings={tab === "Settings"} />
@@ -101,7 +138,31 @@ export default function PublisherPage() {
 }
 
 /* ------------------------------- OVERVIEW ------------------------------- */
-function Overview({ data, flash, reload }: { data: PublisherOverview; onCreate: () => void; flash: (m: string) => void; reload: () => void }) {
+function Overview({ data, flash, reload, goTab }: { data: PublisherOverview; onCreate: () => void; flash: (m: string) => void; reload: () => void; goTab: (t: string) => void }) {
+  const [sel, setSel] = useState<PDetail | null>(null);
+  // Any post row opens its real record: the copy that went out, where, when,
+  // and whether anything about it can actually be measured.
+  const openPost = (p: SocialPost) => setSel({
+    title: p.title || p.content.slice(0, 60),
+    subtitle: p.content,
+    badge: { label: p.status, cls: STATUS_TONE[p.status] || "bg-slate-500/15 text-slate-300" },
+    rows: [
+      ["Channel", p.platform],
+      ["Status", p.status],
+      ...(p.publishedAt ? [["Published", new Date(p.publishedAt).toLocaleString()] as [string, string]] : []),
+      ...(p.scheduledAt ? [["Scheduled for", new Date(p.scheduledAt).toLocaleString()] as [string, string]] : []),
+      ...(p.link ? [["Links to", p.link] as [string, string]] : []),
+      ...(p.externalUrl ? [["Live at", p.externalUrl] as [string, string]] : []),
+      ...(p.error ? [["Error", p.error] as [string, string]] : []),
+    ],
+    why: p.status === "Published"
+      ? "This went out to a real channel. Its performance is unknown: no analytics API is connected, so impressions and engagement are not measured — they are not zero, they are unmeasured."
+      : p.status === "Failed"
+        ? "This never reached the channel. The error above is what the platform returned."
+        : "Not published yet.",
+    note: "Performance numbers on this page were previously synthesised from a hash of the platform name. They have been removed — connect a channel's analytics to see real ones.",
+    ...(p.externalUrl ? { cta: { label: "Open the live post", go: () => window.open(p.externalUrl, "_blank") } } : {}),
+  });
   const k = data.kpis;
   const kpis = [
     { label: "Published This Period", value: kfmt(k.publishedThisPeriod), trend: k.publishedTrend, icon: Send, color: "#8b5cf6" },
@@ -142,43 +203,56 @@ function Overview({ data, flash, reload }: { data: PublisherOverview; onCreate: 
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
-        <FadeUp><Card title="Recent Published Content" right={<ViewAll label="View All Published" />}>
-          {data.recent.length === 0 ? <Empty msg="Nothing published yet." /> : <ul className="space-y-2">{data.recent.map((p) => <PostRow key={p.id} p={p} compact />)}</ul>}
+        <FadeUp><Card title="Recent Published Content" right={<ViewAll label="View All Published" onClick={() => goTab("Published Content")} />}>
+          {data.recent.length === 0 ? <Empty msg="Nothing published yet." /> : <ul className="space-y-2">{data.recent.map((p) => <PostRow key={p.id} p={p} compact onOpen={openPost} />)}</ul>}
         </Card></FadeUp>
-        <FadeUp delay={0.05}><Card title="Scheduled Content" right={<ViewAll label="View Calendar" />}>
+        <FadeUp delay={0.05}><Card title="Scheduled Content" right={<ViewAll label="View Calendar" onClick={() => goTab("Calendar")} />}>
           {data.scheduled.length === 0 ? <Empty msg="Nothing scheduled." /> : <ul className="space-y-2">{data.scheduled.map((p) => { const m = PLATFORM_ICON[p.platform]; const M = m?.Icon || Globe; return (
-            <li key={p.id} className="flex items-center gap-2.5 rounded-lg border border-ink-800 bg-ink-950/40 px-2.5 py-2"><span className="w-7 h-7 rounded-lg bg-ink-800 grid place-items-center shrink-0" style={{ color: m?.color }}><M className="w-3.5 h-3.5" /></span><div className="min-w-0 flex-1"><div className="text-[11px] text-white truncate">{p.title || p.content.slice(0, 40)}</div><div className="text-[9px] text-amber-400">{ago(p.scheduledAt)} · {p.platform}</div></div></li>
+            <li key={p.id} onClick={() => openPost(p)} className="flex items-center gap-2.5 rounded-lg border border-ink-800 bg-ink-950/40 px-2.5 py-2 cursor-pointer hover:bg-ink-900/60 transition-colors"><span className="w-7 h-7 rounded-lg bg-ink-800 grid place-items-center shrink-0" style={{ color: m?.color }}><M className="w-3.5 h-3.5" /></span><div className="min-w-0 flex-1"><div className="text-[11px] text-white truncate">{p.title || p.content.slice(0, 40)}</div><div className="text-[9px] text-amber-400">{ago(p.scheduledAt)} · {p.platform}</div></div></li>
           ); })}</ul>}
         </Card></FadeUp>
-        <FadeUp delay={0.1}><Card title="Top Performing Content" right={<ViewAll label="View Report" />}>
-          {data.topPerforming.length === 0 ? <Empty msg="No performance data yet." /> : <ul className="space-y-2">{data.topPerforming.map((p) => <PostRow key={p.id} p={p} compact />)}</ul>}
+        <FadeUp delay={0.1}><Card title="Top Performing Content" right={<ViewAll label="View Report" onClick={() => goTab("Performance")} />}>
+          {data.topPerforming.length === 0 ? <Empty msg="No performance data yet." /> : <ul className="space-y-2">{data.topPerforming.map((p) => <PostRow key={p.id} p={p} compact onOpen={openPost} />)}</ul>}
         </Card></FadeUp>
       </div>
 
-      <FadeUp><Card title="Publisher Agent Recommendations" right={<ViewAll label="View All Recommendations" />}>
+      <FadeUp><Card title="Publisher Agent Recommendations" right={null}>
+        {data.recommendations.length === 0 && <div className="py-6 text-center text-[11px] text-slate-500">Nothing to flag — the queue is clear and every channel is connected.</div>}
         <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-5 gap-3">{data.recommendations.map((r) => (
-          <Item key={r.key} className="rounded-xl border border-ink-800 bg-ink-950/40 p-3"><span className="w-7 h-7 rounded-lg bg-brand-500/15 text-brand-300 grid place-items-center"><Sparkles className="w-3.5 h-3.5" /></span><div className="text-[12px] font-bold text-white mt-1.5">{r.title}</div><p className="text-[10px] text-slate-500 mt-0.5">{r.detail}</p><div className="text-[10px] font-semibold text-brand-400 mt-1.5">{r.cta} →</div></Item>
+          <Item key={r.key}><button
+            onClick={() => goTab(r.go === "channels" ? "Distribution Channels" : "Content Queue")}
+            className="w-full h-full text-left rounded-xl border border-ink-800 bg-ink-950/40 p-3 hover:bg-ink-900/60 transition-colors group"
+          ><span className="w-7 h-7 rounded-lg bg-brand-500/15 text-brand-300 grid place-items-center"><Sparkles className="w-3.5 h-3.5" /></span><div className="text-[12px] font-bold text-white mt-1.5 group-hover:text-brand-200 transition-colors">{r.title}</div><p className="text-[10px] text-slate-500 mt-0.5">{r.detail}</p><div className="text-[10px] font-semibold text-brand-400 mt-1.5">{r.cta} →</div></button></Item>
         ))}</div>
       </Card></FadeUp>
 
       {data.recent.length === 0 && data.scheduled.length === 0 &&
         <div className="text-center text-[12px] text-slate-500 py-2">Tip: hit <b className="text-slate-300">Create New Post</b> to generate channel-ready posts from your blogs, then Publish.</div>}
+      {sel && <PublisherDetails d={sel} onClose={() => setSel(null)} />}
     </div>
   );
 }
 function Empty({ msg }: { msg: string }) { return <div className="py-8 text-center text-[11px] text-slate-500">{msg}</div>; }
 
-function PostRow({ p, compact, actions }: { p: SocialPost; compact?: boolean; actions?: React.ReactNode }) {
+function PostRow({ p, compact, actions, onOpen }: { p: SocialPost; compact?: boolean; actions?: React.ReactNode; onOpen?: (p: SocialPost) => void }) {
   const m = PLATFORM_ICON[p.platform]; const M = m?.Icon || Globe;
   return (
-    <li className="flex items-start gap-2.5 rounded-lg border border-ink-800 bg-ink-950/40 px-2.5 py-2">
+    <li
+      onClick={(e) => { if (onOpen && !(e.target as HTMLElement).closest("button, a")) onOpen(p); }}
+      className={`flex items-start gap-2.5 rounded-lg border border-ink-800 bg-ink-950/40 px-2.5 py-2 ${onOpen ? "cursor-pointer hover:bg-ink-900/60 transition-colors" : ""}`}
+    >
       <span className="w-7 h-7 rounded-lg bg-ink-800 grid place-items-center shrink-0" style={{ color: m?.color }}><M className="w-3.5 h-3.5" /></span>
       <div className="min-w-0 flex-1">
         <div className="text-[11px] font-semibold text-white truncate">{p.title || p.content.slice(0, 48)}</div>
         {!compact && <div className="text-[10px] text-slate-500 line-clamp-2 mt-0.5">{p.content}</div>}
         <div className="flex items-center gap-2 mt-1 flex-wrap">
           <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded ${STATUS_TONE[p.status]}`}>{p.status}</span>
-          {p.status === "Published" && <span className="text-[9px] text-slate-500">{kfmt(p.impressions)} impr · {kfmt(p.engagements)} eng · {kfmt(p.clicks)} clk{p.estimated ? " (est.)" : ""}</span>}
+          {/* Only show performance when something real measured it. Every post
+              used to print "N impr · N eng · N clk (est.)" off a platform-name
+              hash; a zeroed row now says plainly that nothing is measured. */}
+          {p.status === "Published" && (p.impressions > 0 || p.engagements > 0 || p.clicks > 0
+            ? <span className="text-[9px] text-slate-500">{kfmt(p.impressions)} impr · {kfmt(p.engagements)} eng · {kfmt(p.clicks)} clk</span>
+            : <span className="text-[9px] text-slate-600">no analytics connected</span>)}
           {p.externalUrl && <a href={p.externalUrl} target="_blank" rel="noreferrer" className="text-[9px] text-sky-400 inline-flex items-center gap-0.5 hover:underline"><ExternalLink className="w-2.5 h-2.5" /> live</a>}
           {p.status === "Failed" && p.error && <span className="text-[9px] text-rose-400 truncate max-w-[200px]" title={p.error}>{p.error}</span>}
         </div>

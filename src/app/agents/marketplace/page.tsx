@@ -100,7 +100,7 @@ export default function MarketplacePage() {
 
         <div className="p-5">
           {loading || !data ? <div className="grid place-items-center py-32 text-slate-600"><Loader2 className="w-8 h-8 animate-spin" /></div>
-            : tab === "Overview" ? <Overview data={data} flash={flash} reload={load} />
+            : tab === "Overview" ? <Overview data={data} flash={flash} reload={load} setTab={setTab} />
             : tab === "Provider Discovery" ? <DiscoveryTab onOpen={() => setDiscOpen(true)} flash={flash} />
             : tab === "Unclaimed Profiles" ? <UnclaimedTab flash={flash} />
             : tab === "Claim Funnel" ? <ClaimFunnelTab flash={flash} />
@@ -118,7 +118,43 @@ export default function MarketplacePage() {
 }
 
 /* ============================== OVERVIEW ============================== */
-function Overview({ data, flash, reload }: { data: MarketplaceData; flash: (m: string) => void; reload: () => void }) {
+// Details drawer — nothing on this page could be opened before.
+type MDetail = { title: string; subtitle?: string; badge?: { label: string; cls: string }; rows: [string, string][]; why?: string; note?: string; cta?: { label: string; go: () => void } };
+function MarketplaceDetails({ d, onClose }: { d: MDetail; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end bg-black/50" onClick={onClose}>
+      <motion.div initial={{ x: 460 }} animate={{ x: 0 }} transition={{ type: "spring", damping: 26, stiffness: 240 }} onClick={(e) => e.stopPropagation()} className="w-full max-w-md h-full bg-ink-900 border-l border-ink-800 flex flex-col">
+        <div className="h-16 px-4 flex items-center gap-2 border-b border-ink-800 shrink-0">
+          {d.badge && <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${d.badge.cls}`}>{d.badge.label}</span>}
+          <span className="text-sm font-bold text-white">Details</span>
+          <button onClick={onClose} className="ml-auto w-8 h-8 grid place-items-center rounded-lg text-slate-400 hover:bg-ink-800"><X className="w-4 h-4" /></button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin">
+          <div>
+            <h3 className="text-base font-bold text-white leading-snug">{d.title}</h3>
+            {d.subtitle && <p className="text-[12px] text-slate-400 mt-1">{d.subtitle}</p>}
+          </div>
+          {d.rows.length > 0 && (
+            <div className="rounded-xl border border-ink-800 bg-ink-950/40 divide-y divide-ink-800">
+              {d.rows.map(([k, v]) => (
+                <div key={k} className="flex items-start justify-between gap-3 px-3 py-2">
+                  <span className="text-[11px] text-slate-500 shrink-0">{k}</span>
+                  <span className="text-[11px] font-semibold text-slate-200 text-right break-all">{v}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          {d.why && <div className="rounded-xl border border-ink-800 bg-ink-950/40 p-3"><div className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">How this is worked out</div><p className="text-[12px] text-slate-300 leading-relaxed">{d.why}</p></div>}
+          {d.note && <p className="text-[10px] text-slate-500 leading-relaxed">{d.note}</p>}
+          {d.cta && <button onClick={d.cta.go} className="w-full rounded-xl px-4 py-2.5 text-[12px] font-bold bg-brand-600 text-white hover:bg-brand-500 inline-flex items-center justify-center gap-1.5">{d.cta.label} <ArrowRight className="w-3.5 h-3.5" /></button>}
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+function Overview({ data, flash, reload, setTab }: { data: MarketplaceData; flash: (m: string) => void; reload: () => void; setTab: (t: string) => void }) {
+  const [sel, setSel] = useState<MDetail | null>(null);
   const k = data.kpis;
   const maxPipe = Math.max(...data.pipeline.map((p) => p.count), 1);
   const send = async (name: string, id?: string) => { if (!id) { flash("Open a provider list to act."); return; } const r = await mktToSales(id); flash(r.ok ? `✓ ${r.message}` : (r.message || "Failed")); reload(); };
@@ -152,7 +188,18 @@ function Overview({ data, flash, reload }: { data: MarketplaceData; flash: (m: s
           <div className="space-y-2.5">{data.topLocations.map((l) => (<div key={l.location}><div className="flex items-center justify-between text-[12px] mb-1"><span className="text-slate-300">{l.location}</span><span className="text-slate-500">{l.coverageScore}% · {l.total} <span className="text-emerald-400">+{l.newThisWeek}</span></span></div><Bar pct={l.coverageScore} color={l.coverageScore >= 75 ? "#34d399" : l.coverageScore >= 45 ? "#fbbf24" : "#fb7185"} /></div>))}</div>
         </Card></FadeUp>
         <FadeUp><Card title="High Value Providers" sub="Top opportunities">
-          <div className="space-y-2">{data.highValueProviders.map((h, i) => (<div key={i} className="flex items-center gap-2.5"><Logo url={h.logoUrl} name={h.name} /><div className="min-w-0 flex-1"><div className="text-[12px] text-white font-medium truncate">{h.name}</div><div className="text-[10px] text-slate-500 truncate">{h.category}</div></div><Score s={h.growthScore} /><span className="text-[11px] text-emerald-400 font-semibold w-[68px] text-right">{aed(h.revenue)}/mo</span></div>))}</div>
+          <div className="space-y-2">{data.highValueProviders.map((h, i) => (<button key={i} onClick={() => setSel({
+            title: h.name,
+            subtitle: h.category,
+            rows: [
+              ["Growth score", String(h.growthScore)],
+              ["If they subscribe", `AED ${h.revenue}/mo (Basic plan)`],
+              ["Category", h.category],
+            ],
+            why: "Ranked by growth score — a computed blend of rating, review volume, profile completeness and category demand. The AED figure is our Basic plan price, i.e. what they would start paying; it is not revenue we earn today.",
+            note: "No provider currently pays anything: there are zero active subscriptions on the platform.",
+            cta: { label: "Open Provider Discovery", go: () => setTab("Provider Discovery") },
+          })} className="w-full flex items-center gap-2.5 rounded-lg px-1 py-1 hover:bg-ink-800/50 transition-colors group text-left"><Logo url={h.logoUrl} name={h.name} /><div className="min-w-0 flex-1"><div className="text-[12px] text-white font-medium truncate group-hover:text-brand-200 transition-colors">{h.name}</div><div className="text-[10px] text-slate-500 truncate">{h.category}</div></div><Score s={h.growthScore} /><span className="text-[11px] text-emerald-400 font-semibold w-[68px] text-right">{aed(h.revenue)}/mo</span></button>))}</div>
         </Card></FadeUp>
         <FadeUp><Card title="Recent Activities">
           {data.activities.length === 0 ? <div className="text-[12px] text-slate-500 py-4">No activity yet — run discovery.</div> :
@@ -176,6 +223,7 @@ function Overview({ data, flash, reload }: { data: MarketplaceData; flash: (m: s
       <FadeUp><Card title="Growth Forecast" sub="Projected from current run-rate">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">{data.forecast.map((f) => (<div key={f.label} className="rounded-xl border border-ink-800 bg-ink-950/40 p-3"><div className="text-[11px] text-slate-500">{f.label}</div><div className="text-2xl font-extrabold text-emerald-400">+<AnimatedNumber value={f.value} /></div><div className="text-[10px] text-slate-500 mb-1">New Providers</div><Mini series={f.series} color="#34d399" /></div>))}</div>
       </Card></FadeUp>
+      {sel && <MarketplaceDetails d={sel} onClose={() => setSel(null)} />}
     </div>
   );
 }
@@ -334,7 +382,7 @@ function ProvidersTab({ filter, flash }: { filter: string; flash: (m: string) =>
                   </div>
                   <Score s={p.growthScore} />
                 </div>
-                <div className="mt-3 flex items-center gap-3 text-[11px]"><span className="text-slate-400">Revenue est. <span className="text-emerald-400 font-semibold">{aed(p.revenue)}/mo</span></span><span className="text-slate-500">Profile {p.strength}%</span></div>
+                <div className="mt-3 flex items-center gap-3 text-[11px]"><span className="text-slate-400" title="The Basic plan price this provider would start paying if they subscribe. It is a price list entry, not earned revenue — nobody is paying yet.">If they subscribe <span className="text-emerald-400 font-semibold">{aed(p.revenue)}/mo</span></span><span className="text-slate-500">Profile {p.strength}%</span></div>
                 <div className="mt-3 pt-3 border-t border-ink-800 flex items-center gap-2">
                   {!p.published && <button onClick={() => act(p.id, () => mktPublish(p.id), "p")} disabled={!!busy} className="inline-flex items-center gap-1 px-2.5 h-8 rounded-lg bg-emerald-500/15 text-emerald-300 text-[12px] font-semibold hover:bg-emerald-500/25 disabled:opacity-50">{busy === p.id + "p" ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />} Publish</button>}
                   <button onClick={() => act(p.id, () => mktToSales(p.id), "s")} disabled={!!busy} className="inline-flex items-center gap-1 px-2.5 h-8 rounded-lg bg-brand-500/15 text-brand-300 text-[12px] font-semibold hover:bg-brand-500/25 disabled:opacity-50">{busy === p.id + "s" ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3.5 h-3.5" />} To Sales</button>
@@ -630,7 +678,7 @@ function LeadScoringTab({ flash }: { flash: (m: string) => void }) {
                       <td className="px-2"><span className="inline-flex items-center gap-1.5"><span className="font-bold" style={{ color: scoreColor(r.score) }}>{r.score}</span><span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded ${TIER_TONE[r.tier]}`}>{r.tier}</span></span></td>
                       <td className="px-2">{r.trend7d > 0 ? <span className="text-emerald-400 inline-flex items-center"><TrendingUp className="w-3 h-3" />{r.trend7d}</span> : r.trend7d < 0 ? <span className="text-rose-400 inline-flex items-center"><TrendingDown className="w-3 h-3" />{Math.abs(r.trend7d)}</span> : <span className="text-slate-600">—</span>}</td>
                       <td className="px-2 text-slate-300">{r.reviews}</td>
-                      <td className="px-2 text-emerald-300 font-semibold">${r.revenue}/mo</td>
+                      <td className="px-2 text-emerald-300 font-semibold">{aed(r.revenue)}/mo</td>
                       <td className="px-2 text-right"><button onClick={() => send(r.id, r.company)} disabled={busy === r.id} title="Send to Sales" className="inline-flex items-center gap-1 px-2.5 h-7 rounded-lg bg-brand-500/15 text-brand-300 text-[11px] font-semibold hover:bg-brand-500/25 disabled:opacity-50 ml-auto">{busy === r.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}</button></td>
                     </motion.tr>
                   ))}
@@ -932,7 +980,9 @@ function DataQualityView({ flash }: { flash: (m: string) => void }) {
           <FadeUp><Card title="AI Data Enrichment" sub="Automated fill rate">
             <div className="flex items-center justify-between">
               <div><div className="text-2xl font-extrabold text-white"><AnimatedNumber value={d.enrichment.enrichedThisWeek} /></div><div className="text-[11px] text-slate-500">enriched this week</div></div>
-              <div className="text-right"><div className="text-xl font-bold text-emerald-300">{d.enrichment.accuracy}%</div><div className="text-[11px] text-slate-500">accuracy</div></div>
+              {/* Nothing checks an enrichment against ground truth, so there
+                  is no accuracy to show. This tile used to read a hardcoded 94.2%. */}
+              <div className="text-right"><div className="text-xl font-bold text-slate-500">{d.enrichment.accuracy != null ? `${d.enrichment.accuracy}%` : "—"}</div><div className="text-[11px] text-slate-500">{d.enrichment.accuracy != null ? "accuracy" : "accuracy not measured"}</div></div>
             </div>
             <div className="mt-2.5 pt-2.5 border-t border-ink-800 flex items-center justify-between text-[11px]"><span className="text-slate-400">Total enriched (all time)</span><span className="font-bold text-slate-200">{d.enrichment.totalEnriched}</span></div>
           </Card></FadeUp>

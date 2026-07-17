@@ -854,14 +854,26 @@ export type MarketingData = {
   channels: { label: string; value: number; pct: number; color: string }[];
   campaigns: { campaign: string; sessions: number; conversions: number; rate: number; revenue: number; roi: number }[];
   categories: { category: string; sessions: number; bookings: number; revenue: number; growth: number }[];
-  opportunities: { title: string; detail: string; impact: string }[];
-  contentIdeas: { title: string; potential: string }[];
+  // Each opportunity carries the real proposal behind it — id, owner, plan and
+  // page — so the card opens details and "Approve & fix" can really execute.
+  opportunities: {
+    id?: string; title: string; detail: string; meta?: string; impact: string;
+    agent?: string; reason?: string; plan?: string[]; path?: string; link?: string;
+    confidence?: number; effort?: string; trafficPotential?: number;
+  }[];
+  contentIdeas: {
+    title: string; potential: string; keyword?: string; category?: string;
+    assignedTo?: string; status?: string; demand?: number; potentialTraffic?: number;
+  }[];
   weeklyPlan: { day: string; block: string; color: string }[];
   collaboration: { agent: string; note: string; at: string; status: string }[];
   insights?: {
     trafficTrend: { label: string; sessions: number; conversions: number; users: number }[];
     topChannels: { channel: string; sessions: number; share: number; change: number }[];
-    seo: { organicSessions: number; seoScore: number | null; routesCrawled: number; seoIssues: number; avgPosition: number | null; topKeywords: { keyword: string; position: number; clicks: number; change: number }[]; movement: { improved: number; noChange: number; declined: number } };
+    // No Search Console is connected: avgPosition, per-keyword position and
+    // keyword movement are unknowable, so they come back null. "clicks" here is
+    // on-site listing views for the category, not search clicks.
+    seo: { organicSessions: number; seoScore: number | null; routesCrawled: number; seoIssues: number; avgPosition: number | null; topKeywords: { keyword: string; position: number | null; clicks: number; change: number }[]; movement: { improved: number; noChange: number; declined: number } | null };
     contentInsights: { title: string; pageViews: number; status: string; at: string }[];
     categoryInsights: { category: string; sessions: number; growth: number; opportunity: string }[];
     summary: string[];
@@ -926,6 +938,18 @@ export function createMarketingPlan(input: Partial<MarketingPlanRow> & { name?: 
 export function updateMarketingPlan(id: string, patch: Record<string, unknown>) { return request<{ ok: boolean; plan: MarketingPlanRow }>(`/admin/tasks/plans/${id}`, { method: "PATCH", body: JSON.stringify(patch) }); }
 export function deleteMarketingPlan(id: string) { return request<{ ok: boolean }>(`/admin/tasks/plans/${id}`, { method: "DELETE" }); }
 export function completeMarketingPlan(id: string) { return request<{ ok: boolean; plan: MarketingPlanRow }>(`/admin/tasks/plans/${id}/complete`, { method: "POST" }); }
+/** Build a plan from live platform gaps — real DB read, no LLM, no tokens. */
+export function generateMarketingPlan() { return request<{ ok: boolean; plan?: MarketingPlanRow; message: string }>("/admin/tasks/plans/generate", { method: "POST" }); }
+/** Move a real initiative — the plan's progress recomputes from it. */
+export function setPlanInitiative(planId: string, iniId: string, patch: { status?: string; progress?: number; title?: string; dueDate?: string | null }) {
+  return request<{ ok: boolean; plan: MarketingPlanRow }>(`/admin/tasks/plans/${planId}/initiatives/${iniId}`, { method: "PATCH", body: JSON.stringify(patch) });
+}
+export function addPlanInitiative(planId: string, input: { title: string; dueDate?: string | null }) {
+  return request<{ ok: boolean; plan: MarketingPlanRow }>(`/admin/tasks/plans/${planId}/initiatives`, { method: "POST", body: JSON.stringify(input) });
+}
+export function deletePlanInitiative(planId: string, iniId: string) {
+  return request<{ ok: boolean; plan: MarketingPlanRow }>(`/admin/tasks/plans/${planId}/initiatives/${iniId}`, { method: "DELETE" });
+}
 
 // ---- Copywriter Agent — real content analytics ----
 export type CopywriterData = {
@@ -1129,7 +1153,9 @@ export type PublisherOverview = {
   funnel: { stages: { stage: string; count: number; color: string }[]; conversionRate: number; approvalRate: number; avgTimeToPublish: number };
   topChannels: PublisherChannel[];
   recent: SocialPost[]; scheduled: SocialPost[]; topPerforming: SocialPost[];
-  recommendations: { key: string; title: string; detail: string; cta: string }[];
+  // `go` tells the UI which tab actually fixes this — recommendations are built
+  // from the real queue/channel state, so each one has somewhere to send you.
+  recommendations: { key: string; title: string; detail: string; cta: string; go?: "channels" | "queue" }[];
   blogs: { id: string; title: string; slug: string; views: number }[];
   platforms: string[]; connectedCount: number; llm: boolean;
 };
@@ -1578,7 +1604,9 @@ export type DataQualityData = {
   topIssues: { label: string; count: number }[];
   byCategory: DQCatRow[];
   improvement: { thisWeek: number; autoEnriched: number; manual: number; claimed: number };
-  enrichment: { enrichedThisWeek: number; accuracy: number; totalEnriched: number };
+  // accuracy is null: nothing verifies whether an enrichment got the facts
+  // right, so there is no accuracy figure to report (it was hardcoded 94.2%).
+  enrichment: { enrichedThisWeek: number; accuracy: number | null; totalEnriched: number };
   recentImprovements: { profile: string; category: string; fields: string; scoreAfter: number; improvedOn: string; source: string }[];
   needingAttention: { id: string; profile: string; category: string; issueCount: number; criticalIssues: string; score: number }[];
 };

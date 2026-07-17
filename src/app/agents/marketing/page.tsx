@@ -8,6 +8,7 @@ import {
   X, Download, Clock, AlertTriangle, MoreHorizontal, ChevronLeft, ChevronRight, ListChecks, Zap, Target,
   FolderOpen, Plus, Rocket, FileCheck2, RefreshCw, Link2, Megaphone as MegaphoneIcon,
   Lightbulb, Eye, Trash2,
+  Check,
 } from "lucide-react";
 import Sidebar from "@/components/Sidebar";
 import AgentGate from "@/components/AgentGate";
@@ -15,6 +16,7 @@ import { FadeUp, Stagger, Item, motion } from "@/components/motion";
 import {
   fetchMe, getStoredUser, getMarketingDirector, agentChat, getMarketingTasks, listTasks, completeTask,
   getMarketingPlansBoard, listMarketingPlans, completeMarketingPlan, deleteMarketingPlan, createMarketingPlan,
+  generateMarketingPlan, setPlanInitiative, addPlanInitiative, deletePlanInitiative,
   getMarketingCampaigns, syncMarketingCampaigns,
   getBriefBoard, listBriefs, advanceBrief, updateBrief, deleteBrief,
   getStrategy, type StrategyData,
@@ -55,6 +57,77 @@ function MultiDonut({ segments, total, label, size = 150, stroke = 18, center }:
 
 const TABS = ["Overview", "Tasks", "Plans", "Insights", "Campaigns", "Content Ideas", "Recommendations", "Performance", "Agent Collaboration"];
 
+// What a details drawer can show. Every field is real row data.
+type Detail = {
+  title: string;
+  subtitle?: string;
+  badge?: { label: string; cls: string };
+  rows: [string, string][];
+  why?: string;
+  plan?: string[];
+  note?: string;
+  cta?: { label: string; go: () => void };
+};
+
+function DetailsDrawer({ d, onClose }: { d: Detail; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end bg-black/50" onClick={onClose}>
+      <motion.div
+        initial={{ x: 460 }} animate={{ x: 0 }} transition={{ type: "spring", damping: 26, stiffness: 240 }}
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-md h-full bg-ink-900 border-l border-ink-800 flex flex-col"
+      >
+        <div className="h-16 px-4 flex items-center gap-2 border-b border-ink-800 shrink-0">
+          {d.badge && <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${d.badge.cls}`}>{d.badge.label}</span>}
+          <span className="text-sm font-bold text-white truncate">Details</span>
+          <button onClick={onClose} className="ml-auto w-8 h-8 grid place-items-center rounded-lg text-slate-400 hover:bg-ink-800"><X className="w-4 h-4" /></button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin">
+          <div>
+            <h3 className="text-base font-bold text-white leading-snug">{d.title}</h3>
+            {d.subtitle && <p className="text-[12px] text-slate-400 mt-1 leading-relaxed">{d.subtitle}</p>}
+          </div>
+          {d.rows.length > 0 && (
+            <div className="rounded-xl border border-ink-800 bg-ink-950/40 divide-y divide-ink-800">
+              {d.rows.map(([k, v]) => (
+                <div key={k} className="flex items-center justify-between gap-3 px-3 py-2">
+                  <span className="text-[11px] text-slate-500">{k}</span>
+                  <span className="text-[11px] font-semibold text-slate-200 text-right">{v}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          {d.why && (
+            <div className="rounded-xl border border-ink-800 bg-ink-950/40 p-3">
+              <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Why it matters</div>
+              <p className="text-[12px] text-slate-300 leading-relaxed">{d.why}</p>
+            </div>
+          )}
+          {d.plan && d.plan.length > 0 && (
+            <div className="rounded-xl border border-ink-800 bg-ink-950/40 p-3">
+              <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">The plan</div>
+              <ol className="space-y-1.5">
+                {d.plan.map((s, i) => (
+                  <li key={i} className="flex gap-2 text-[12px] text-slate-300">
+                    <span className="w-4 h-4 rounded bg-ink-800 text-slate-500 text-[9px] font-bold grid place-items-center shrink-0 mt-0.5">{i + 1}</span>
+                    <span className="leading-relaxed">{s}</span>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
+          {d.note && <p className="text-[10px] text-slate-500 leading-relaxed">{d.note}</p>}
+          {d.cta && (
+            <button onClick={d.cta.go} className="w-full rounded-xl px-4 py-2.5 text-[12px] font-bold bg-brand-600 text-white hover:bg-brand-500 inline-flex items-center justify-center gap-1.5">
+              {d.cta.label} <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
 export default function MarketingDirectorPage() {
   const router = useRouter();
   const [ready, setReady] = useState(false);
@@ -63,6 +136,9 @@ export default function MarketingDirectorPage() {
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState("Overview");
   const [askOpen, setAskOpen] = useState(false);
+  // Anything on this page you click opens its real detail — the row's own data,
+  // not a placeholder.
+  const [sel, setSel] = useState<Detail | null>(null);
 
   useEffect(() => {
     let off = false;
@@ -156,22 +232,22 @@ export default function MarketingDirectorPage() {
                 </div>
               )}
 
-              {tab === "Insights" && data.insights && <InsightsTab data={data} />}
+              {tab === "Insights" && data.insights && <InsightsTab data={data} onSel={setSel} goTab={setTab} />}
 
               {/* Campaigns | Growth Opportunities | Content Ideas */}
               {show("Campaigns", "Recommendations", "Content Ideas") && (
                 <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
-                  {show("Campaigns", "Performance") && <FadeUp><Card title="Campaign Performance" right={<ViewAll />}>
+                  {show("Campaigns", "Performance") && <FadeUp><Card title="Campaign Performance" right={<ViewAll onClick={() => setTab("Campaigns")} />}>
                     <div className="overflow-x-auto"><table className="w-full text-left min-w-[340px]"><thead><tr className="text-[9px] uppercase tracking-wide text-slate-600 border-b border-ink-800"><th className="py-1.5 font-semibold">Campaign</th><th className="font-semibold text-right">Sessions</th><th className="font-semibold text-right">Conv.</th><th className="font-semibold text-right">Rate</th><th className="font-semibold text-right">Revenue</th><th className="font-semibold text-right">ROI</th></tr></thead>
-                      <tbody>{data.campaigns.map((c, i) => <tr key={i} className="border-b border-ink-900"><td className="py-2 text-[11px] font-semibold text-white truncate max-w-[120px]">{c.campaign}</td><td className="text-[10px] text-slate-300 text-right tabular-nums">{kfmt(c.sessions)}</td><td className="text-[10px] text-slate-300 text-right tabular-nums">{c.conversions}</td><td className="text-[10px] text-slate-400 text-right tabular-nums">{c.rate}%</td><td className="text-[10px] text-white text-right tabular-nums">{kfmt(c.revenue)}</td><td className={`text-[10px] text-right tabular-nums font-bold ${c.roi >= 0 ? "text-emerald-400" : "text-rose-400"}`}>{c.roi}%</td></tr>)}
+                      <tbody>{data.campaigns.map((c, i) => <tr key={i} onClick={() => setSel({ title: c.campaign, subtitle: "Category campaign — every number below is live platform data for this category.", badge: { label: c.roi >= 0 ? "Positive ROI" : "Negative ROI", cls: c.roi >= 0 ? "bg-emerald-500/15 text-emerald-300" : "bg-rose-500/15 text-rose-300" }, rows: [["Sessions", c.sessions.toLocaleString()], ["Conversions (calls + WhatsApp)", String(c.conversions)], ["Conversion rate", c.rate + "%"], ["Revenue attributed", "AED " + c.revenue.toLocaleString()], ["ROI", c.roi + "%"]], why: c.conversions === 0 ? "This category gets traffic but zero calls or WhatsApp taps — the listings are seen and skipped. That is a conversion problem, not a traffic problem." : "Sessions are converting into real contact events.", note: "Revenue is attributed by this category share of total views. Conversions count real call + WhatsApp taps on listings.", cta: { label: "Open Performance breakdown", go: () => { setSel(null); setTab("Performance"); } } })} className="border-b border-ink-900 cursor-pointer hover:bg-ink-800/40 transition-colors"><td className="py-2 text-[11px] font-semibold text-white truncate max-w-[120px]">{c.campaign}</td><td className="text-[10px] text-slate-300 text-right tabular-nums">{kfmt(c.sessions)}</td><td className="text-[10px] text-slate-300 text-right tabular-nums">{c.conversions}</td><td className="text-[10px] text-slate-400 text-right tabular-nums">{c.rate}%</td><td className="text-[10px] text-white text-right tabular-nums">{kfmt(c.revenue)}</td><td className={`text-[10px] text-right tabular-nums font-bold ${c.roi >= 0 ? "text-emerald-400" : "text-rose-400"}`}>{c.roi}%</td></tr>)}
                       {data.campaigns.length === 0 && <tr><td colSpan={6} className="py-6 text-center text-[11px] text-slate-500">No campaign data yet.</td></tr>}</tbody></table></div>
                   </Card></FadeUp>}
-                  {show("Recommendations") && <FadeUp delay={0.05}><Card title="Growth Opportunities" right={<ViewAll />}>
-                    <ul className="space-y-2.5">{data.opportunities.map((o, i) => <li key={i} className="rounded-xl border border-ink-800 bg-ink-950/40 p-3"><div className="flex items-start justify-between gap-2"><div className="flex items-start gap-2 min-w-0"><span className="w-7 h-7 rounded-lg bg-brand-600/15 text-brand-300 grid place-items-center shrink-0"><TrendingUp className="w-3.5 h-3.5" /></span><div className="text-[12px] font-semibold text-white leading-tight">{o.title}</div></div><span className={`text-[9px] font-bold px-1.5 py-0.5 rounded shrink-0 ${IMP[o.impact]}`}>{o.impact} Impact</span></div><p className="text-[10px] text-slate-500 mt-1 leading-snug">{o.detail}</p></li>)}
+                  {show("Recommendations") && <FadeUp delay={0.05}><Card title="Growth Opportunities" right={<ViewAll onClick={() => setTab("Recommendations")} />}>
+                    <ul className="space-y-2.5">{data.opportunities.map((o, i) => <li key={i}><button onClick={() => setSel({ title: o.title, subtitle: o.detail, badge: { label: o.impact + " Impact", cls: IMP[o.impact] || "bg-slate-500/15 text-slate-300" }, rows: [["Owner", o.agent || "AI CEO"], ["Effort", o.effort || "—"], ["Confidence", o.confidence ? o.confidence + "%" : "—"], ...(o.path ? [["Page", o.path] as [string, string]] : []), ...(o.trafficPotential ? [["Est. organic visits/mo if fixed", o.trafficPotential.toLocaleString()] as [string, string]] : [])], why: o.reason || o.detail, plan: o.plan, note: o.trafficPotential ? "Traffic estimate comes from the severity of a real SEO crawl finding — a rough proxy, not a measurement." : "No traffic estimate: this one is a queued task, not a ranking issue, so there is nothing real to base a number on.", cta: { label: "Open in Decision Center", go: () => router.push("/decision-center") } })} className="w-full text-left rounded-xl border border-ink-800 bg-ink-950/40 p-3 hover:bg-ink-900/60 transition-colors group"><div className="flex items-start justify-between gap-2"><div className="flex items-start gap-2 min-w-0"><span className="w-7 h-7 rounded-lg bg-brand-600/15 text-brand-300 grid place-items-center shrink-0"><TrendingUp className="w-3.5 h-3.5" /></span><div className="text-[12px] font-semibold text-white leading-tight group-hover:text-brand-200 transition-colors">{o.title}</div></div><span className={`text-[9px] font-bold px-1.5 py-0.5 rounded shrink-0 ${IMP[o.impact]}`}>{o.impact} Impact</span></div><p className="text-[10px] text-slate-500 mt-1 leading-snug line-clamp-2">{o.detail}</p>{o.meta && <p className="text-[9px] text-slate-600 mt-1">{o.meta}</p>}</button></li>)}
                     {data.opportunities.length === 0 && <li className="text-[11px] text-slate-500 text-center py-4">No opportunities yet.</li>}</ul>
                   </Card></FadeUp>}
-                  {show("Content Ideas") && <FadeUp delay={0.1}><Card title="Content Ideas (Top 5)" right={<ViewAll label="View All Ideas" />}>
-                    <ul className="space-y-2">{data.contentIdeas.map((c, i) => <li key={i} className="flex items-center justify-between gap-2 rounded-lg border border-ink-800 bg-ink-950/40 px-3 py-2"><span className="text-[11px] text-slate-200 truncate">{c.title}</span><span className={`text-[8px] font-bold px-1.5 py-0.5 rounded shrink-0 ${POT[c.potential] || "bg-slate-500/15 text-slate-300"}`}>{c.potential}</span></li>)}
+                  {show("Content Ideas") && <FadeUp delay={0.1}><Card title="Content Ideas (Top 5)" right={<ViewAll label="View All Ideas" onClick={() => setTab("Content Ideas")} />}>
+                    <ul className="space-y-2">{data.contentIdeas.map((c, i) => <li key={i}><button onClick={() => setSel({ title: c.title, subtitle: "A content gap in a category we already serve — no article covers it yet.", badge: { label: c.potential, cls: POT[c.potential] || "bg-slate-500/15 text-slate-300" }, rows: [["Target keyword", c.keyword || "—"], ["Category", c.category || "—"], ["Assigned to", c.assignedTo || "Copywriter Agent"], ["Status", c.status || "Planned"]], why: "Priority is set by how thin our inventory is in this category versus the traffic it already pulls — not by a purchased keyword volume.", note: "Demand figures here are derived from our own listing and view counts, not from a search-volume tool (none is connected).", cta: { label: "Write it in the Copywriter Agent", go: () => router.push("/agents/copywriter") } })} className="w-full flex items-center justify-between gap-2 rounded-lg border border-ink-800 bg-ink-950/40 px-3 py-2 hover:bg-ink-900/60 transition-colors group"><span className="text-[11px] text-slate-200 truncate group-hover:text-white transition-colors">{c.title}</span><span className={`text-[8px] font-bold px-1.5 py-0.5 rounded shrink-0 ${POT[c.potential] || "bg-slate-500/15 text-slate-300"}`}>{c.potential}</span></button></li>)}
                     {data.contentIdeas.length === 0 && <li className="text-[11px] text-slate-500 text-center py-4">No content ideas yet.</li>}</ul>
                   </Card></FadeUp>}
                 </div>
@@ -180,17 +256,17 @@ export default function MarketingDirectorPage() {
               {/* Category Performance | Weekly Plan | Collaboration */}
               {show("Performance", "Plans", "Agent Collaboration") && (
                 <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
-                  {show("Performance") && <FadeUp><Card title="Category Performance" right={<ViewAll label="View All Categories" />}>
+                  {show("Performance") && <FadeUp><Card title="Category Performance" right={<ViewAll label="View All Categories" onClick={() => setTab("Performance")} />}>
                     <div className="overflow-x-auto"><table className="w-full text-left min-w-[300px]"><thead><tr className="text-[9px] uppercase tracking-wide text-slate-600 border-b border-ink-800"><th className="py-1.5 font-semibold">Category</th><th className="font-semibold text-right">Sessions</th><th className="font-semibold text-right">Leads</th><th className="font-semibold text-right">Revenue</th><th className="font-semibold text-right">Conv%</th></tr></thead>
-                      <tbody>{data.categories.map((c, i) => <tr key={i} className="border-b border-ink-900"><td className="py-2 text-[11px] font-semibold text-white truncate max-w-[110px]">{c.category}</td><td className="text-[10px] text-slate-300 text-right tabular-nums">{kfmt(c.sessions)}</td><td className="text-[10px] text-slate-300 text-right tabular-nums">{c.bookings}</td><td className="text-[10px] text-white text-right tabular-nums">{kfmt(c.revenue)}</td><td className="text-[10px] text-emerald-400 text-right tabular-nums">↑ {c.growth}%</td></tr>)}
+                      <tbody>{data.categories.map((c, i) => <tr key={i} onClick={() => setSel({ title: c.category, subtitle: "Live category performance — sessions, real contact events and attributed revenue.", rows: [["Sessions", c.sessions.toLocaleString()], ["Leads (calls + WhatsApp)", String(c.bookings)], ["Revenue attributed", "AED " + c.revenue.toLocaleString()], ["Conversion rate", c.growth + "%"]], why: c.bookings === 0 ? "Traffic arrives and nobody makes contact. Before spending on more traffic, fix the listing pages: pricing, photos, and a reachable contact." : "This category turns sessions into real contact events.", note: "Growth% here is the conversion rate, not a period-over-period change.", cta: { label: "Open Insights", go: () => { setSel(null); setTab("Insights"); } } })} className="border-b border-ink-900 cursor-pointer hover:bg-ink-800/40 transition-colors"><td className="py-2 text-[11px] font-semibold text-white truncate max-w-[110px]">{c.category}</td><td className="text-[10px] text-slate-300 text-right tabular-nums">{kfmt(c.sessions)}</td><td className="text-[10px] text-slate-300 text-right tabular-nums">{c.bookings}</td><td className="text-[10px] text-white text-right tabular-nums">{kfmt(c.revenue)}</td><td className="text-[10px] text-emerald-400 text-right tabular-nums">↑ {c.growth}%</td></tr>)}
                       {data.categories.length === 0 && <tr><td colSpan={5} className="py-6 text-center text-[11px] text-slate-500">No category data yet.</td></tr>}</tbody></table></div>
                   </Card></FadeUp>}
-                  {show("Plans") && <FadeUp delay={0.05}><Card title="Weekly Marketing Plan" right={<ViewAll label="View Full Plan" />}>
-                    <div className="grid grid-cols-7 gap-1.5">{data.weeklyPlan.map((d) => <div key={d.day} className="text-center"><div className="text-[9px] text-slate-500 mb-1">{d.day}</div><div className="h-16 rounded-lg border border-ink-800 bg-ink-950/40 p-1 grid place-items-center">{d.block ? <motion.div initial={{ opacity: 0, scaleY: 0.6 }} animate={{ opacity: 1, scaleY: 1 }} className="w-full h-full rounded-md grid place-items-center px-0.5" style={{ background: `${d.color}22`, border: `1px solid ${d.color}55` }}><span className="text-[8px] font-semibold leading-tight" style={{ color: d.color }}>{d.block}</span></motion.div> : <span className="text-[9px] text-slate-700">—</span>}</div></div>)}</div>
+                  {show("Plans") && <FadeUp delay={0.05}><Card title="Weekly Marketing Plan" right={<ViewAll label="View Full Plan" onClick={() => setTab("Plans")} />}>
+                    <div className="grid grid-cols-7 gap-1.5">{data.weeklyPlan.map((d) => <div key={d.day} onClick={() => d.block && setSel({ title: d.block, subtitle: `The Marketing Director recurring block for ${d.day}.`, rows: [["Day", d.day], ["Focus", d.block]], why: "This is the agent defined weekly cadence — a fixed rhythm, not a schedule pulled from live data.", note: "Nothing runs automatically from this calendar. It documents when the Marketing Director does each kind of work.", cta: { label: "Open Plans", go: () => { setSel(null); setTab("Plans"); } } })} className={`text-center ${d.block ? "cursor-pointer" : ""}`}><div className="text-[9px] text-slate-500 mb-1">{d.day}</div><div className="h-16 rounded-lg border border-ink-800 bg-ink-950/40 p-1 grid place-items-center">{d.block ? <motion.div initial={{ opacity: 0, scaleY: 0.6 }} animate={{ opacity: 1, scaleY: 1 }} className="w-full h-full rounded-md grid place-items-center px-0.5" style={{ background: `${d.color}22`, border: `1px solid ${d.color}55` }}><span className="text-[8px] font-semibold leading-tight" style={{ color: d.color }}>{d.block}</span></motion.div> : <span className="text-[9px] text-slate-700">—</span>}</div></div>)}</div>
                   </Card></FadeUp>}
-                  {show("Agent Collaboration") && <FadeUp delay={0.1}><Card title="Agent Collaboration" right={<ViewAll label="View All Communications" />}>
+                  {show("Agent Collaboration") && <FadeUp delay={0.1}><Card title="Agent Collaboration" right={<ViewAll label="View All Communications" onClick={() => router.push("/communication")} />}>
                     <ul className="space-y-2.5">{data.collaboration.map((c, i) => { const Ico = c.agent.includes("SEO") ? Search : c.agent.includes("Copywriter") ? PenLine : c.agent.includes("Publisher") ? Send : c.agent.includes("Distribution") ? Share2 : Globe; return (
-                      <li key={i} className="flex items-center gap-2.5"><span className="w-8 h-8 rounded-lg bg-brand-600/15 text-brand-300 grid place-items-center shrink-0"><Ico className="w-4 h-4" /></span><div className="min-w-0 flex-1"><div className="text-[11px] font-semibold text-white truncate">{c.agent}</div><div className="text-[9px] text-slate-500 truncate">{c.note}</div></div><span className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 shrink-0">{c.status} ›</span></li>
+                      <li key={i}><button onClick={() => setSel({ title: c.agent, subtitle: c.note, badge: { label: c.status, cls: c.status === "Delivered" ? "bg-emerald-500/15 text-emerald-300" : "bg-rose-500/15 text-rose-300" }, rows: [["Agent", c.agent], ["Outcome", c.status], ["When", new Date(c.at).toLocaleString()]], why: "A real entry from the platform activity log — this agent actually did this work.", cta: { label: "Open the Communication Center", go: () => router.push("/communication") } })} className="w-full flex items-center gap-2.5 rounded-lg px-1 py-1 hover:bg-ink-900/60 transition-colors group"><span className="w-8 h-8 rounded-lg bg-brand-600/15 text-brand-300 grid place-items-center shrink-0"><Ico className="w-4 h-4" /></span><div className="min-w-0 flex-1 text-left"><div className="text-[11px] font-semibold text-white truncate group-hover:text-brand-200 transition-colors">{c.agent}</div><div className="text-[9px] text-slate-500 truncate">{c.note}</div></div><span className={`text-[8px] font-bold px-1.5 py-0.5 rounded shrink-0 ${c.status === "Delivered" ? "bg-emerald-500/15 text-emerald-300" : "bg-rose-500/15 text-rose-300"}`}>{c.status} ›</span></button></li>
                     ); })}
                     {data.collaboration.length === 0 && <li className="text-[11px] text-slate-500 text-center py-4">No agent activity yet.</li>}</ul>
                   </Card></FadeUp>}
@@ -204,6 +280,7 @@ export default function MarketingDirectorPage() {
       </main>
 
       {askOpen && <AskAgent onClose={() => setAskOpen(false)} />}
+      {sel && <DetailsDrawer d={sel} onClose={() => setSel(null)} />}
     </div>
   );
 }
@@ -216,8 +293,15 @@ function Card({ title, sub, right, children }: { title: string; sub?: string; ri
     </div>
   );
 }
-function ViewAll({ label = "View All" }: { label?: string }) {
-  return <span className="inline-flex items-center gap-1 text-[10px] text-brand-400 font-semibold cursor-default">{label} <ArrowRight className="w-3 h-3" /></span>;
+// A "View All" with nothing behind it is a lie. Every one now goes somewhere
+// real — a tab on this page, or another agent's screen.
+function ViewAll({ label = "View All", onClick }: { label?: string; onClick?: () => void }) {
+  if (!onClick) return null;
+  return (
+    <button onClick={onClick} className="inline-flex items-center gap-1 text-[10px] text-brand-400 font-semibold hover:text-brand-300 transition-colors">
+      {label} <ArrowRight className="w-3 h-3" />
+    </button>
+  );
 }
 
 function AskAgent({ onClose }: { onClose: () => void }) {
@@ -405,6 +489,127 @@ function MarketingTasksTab() {
 }
 
 /* ----------------------------- PLANS TAB ----------------------------- */
+
+// A plan you cannot tick items off is a poster. This drawer is where the work
+// actually happens: every initiative is a real row you can start, finish, add
+// or drop — and the plan's progress recomputes from it server-side.
+const INI_ST: Record<string, string> = { "Not Started": "bg-slate-500/15 text-slate-300", "In Progress": "bg-sky-500/15 text-sky-300", Completed: "bg-emerald-500/15 text-emerald-300" };
+
+function PlanDetails({ plan, onChange, onClose }: { plan: MarketingPlanRow; onChange: (p: MarketingPlanRow) => void; onClose: () => void }) {
+  const [busy, setBusy] = useState("");
+  const [newIni, setNewIni] = useState("");
+  const run = async (key: string, fn: () => Promise<{ plan: MarketingPlanRow }>) => {
+    setBusy(key);
+    try { const r = await fn(); onChange(r.plan); } finally { setBusy(""); }
+  };
+  const done = plan.initiatives.filter((i) => i.status === "Completed").length;
+  const overdue = plan.initiatives.filter((i) => i.status !== "Completed" && i.dueDate && new Date(i.dueDate) < new Date()).length;
+
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end bg-black/50" onClick={onClose}>
+      <motion.div
+        initial={{ x: 520 }} animate={{ x: 0 }} transition={{ type: "spring", damping: 26, stiffness: 240 }}
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-lg h-full bg-ink-900 border-l border-ink-800 flex flex-col"
+      >
+        <div className="h-16 px-4 flex items-center gap-2 border-b border-ink-800 shrink-0">
+          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${PLST[plan.status] || ""}`}>{plan.status}</span>
+          <span className="text-[10px] text-slate-600 font-mono">{plan.planId}</span>
+          <button onClick={onClose} className="ml-auto w-8 h-8 grid place-items-center rounded-lg text-slate-400 hover:bg-ink-800"><X className="w-4 h-4" /></button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin">
+          <div>
+            <h3 className="text-base font-bold text-white leading-snug">{plan.name}</h3>
+            <p className="text-[12px] text-slate-400 mt-1">{plan.objective || "No objective set."}</p>
+          </div>
+
+          <div className="rounded-xl border border-ink-800 bg-ink-950/40 divide-y divide-ink-800">
+            {([
+              ["Timeline", `${fmtMD(plan.startDate)} – ${fmtMD(plan.endDate)}`],
+              ["Owner", plan.owner],
+              ["Progress", `${plan.progress}% · ${done}/${plan.initiatives.length} initiatives done`],
+              ...(overdue ? [["Overdue initiatives", String(overdue)] as [string, string]] : []),
+              ["Business goals", plan.objectives.length ? plan.objectives.join(", ") : "—"],
+              ["Last updated", new Date(plan.updatedAt).toLocaleString()],
+            ] as [string, string][]).map(([k, v]) => (
+              <div key={k} className="flex items-start justify-between gap-3 px-3 py-2">
+                <span className="text-[11px] text-slate-500 shrink-0">{k}</span>
+                <span className="text-[11px] font-semibold text-slate-200 text-right">{v}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* The forecast is only shown when someone actually set one. We do not
+              invent a revenue number — the old seeded plans did, and summed to
+              a fake "AED 3,220,000 expected". */}
+          {(plan.forecast?.revenueAed || plan.forecast?.trafficPct) ? (
+            <div className="rounded-xl border border-ink-800 bg-ink-950/40 p-3">
+              <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">Target set by the founder</div>
+              <div className="flex gap-4">
+                {!!plan.forecast.trafficPct && <div><div className="text-base font-bold text-white">↑{plan.forecast.trafficPct}%</div><div className="text-[10px] text-slate-500">Traffic</div></div>}
+                {!!plan.forecast.revenueAed && <div><div className="text-base font-bold text-white">AED {plan.forecast.revenueAed.toLocaleString()}</div><div className="text-[10px] text-slate-500">Revenue</div></div>}
+                {!!plan.forecast.newUsersPct && <div><div className="text-base font-bold text-white">↑{plan.forecast.newUsersPct}%</div><div className="text-[10px] text-slate-500">New users</div></div>}
+              </div>
+            </div>
+          ) : null}
+
+          {/* Initiatives — the real work */}
+          <div>
+            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-2">Initiatives — click a status to move it</div>
+            <ul className="space-y-1.5">
+              {plan.initiatives.map((i) => {
+                const late = i.status !== "Completed" && i.dueDate && new Date(i.dueDate) < new Date();
+                return (
+                  <li key={i.id} className="rounded-xl border border-ink-800 bg-ink-950/40 p-2.5">
+                    <div className="flex items-start gap-2">
+                      <button
+                        onClick={() => run(i.id, () => setPlanInitiative(plan.id, i.id, { status: i.status === "Completed" ? "Not Started" : "Completed" }))}
+                        disabled={!!busy}
+                        title={i.status === "Completed" ? "Reopen" : "Mark done"}
+                        className={`w-4 h-4 rounded border grid place-items-center shrink-0 mt-0.5 transition-colors ${i.status === "Completed" ? "bg-emerald-500 border-emerald-500" : "border-ink-600 hover:border-emerald-500"}`}
+                      >
+                        {busy === i.id ? <Loader2 className="w-2.5 h-2.5 animate-spin text-white" /> : i.status === "Completed" ? <Check className="w-2.5 h-2.5 text-white" /> : null}
+                      </button>
+                      <div className="min-w-0 flex-1">
+                        <div className={`text-[12px] leading-snug ${i.status === "Completed" ? "text-slate-500 line-through" : "text-slate-200"}`}>{i.title}</div>
+                        <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                          {(["Not Started", "In Progress", "Completed"] as const).map((st) => (
+                            <button
+                              key={st}
+                              onClick={() => run(i.id, () => setPlanInitiative(plan.id, i.id, { status: st }))}
+                              disabled={!!busy}
+                              className={`text-[8px] font-bold px-1.5 py-0.5 rounded transition-colors disabled:opacity-50 ${i.status === st ? INI_ST[st] : "bg-ink-800/60 text-slate-600 hover:text-slate-400"}`}
+                            >
+                              {st}
+                            </button>
+                          ))}
+                          {i.dueDate && <span className={`text-[9px] ${late ? "text-rose-400 font-semibold" : "text-slate-600"}`}>{late ? "overdue " : "due "}{fmtMD(i.dueDate)}</span>}
+                          <span className="text-[9px] text-slate-600 ml-auto tabular-nums">{i.progress}%</span>
+                        </div>
+                      </div>
+                      <button onClick={() => run(i.id, () => deletePlanInitiative(plan.id, i.id) as Promise<{ plan: MarketingPlanRow }>)} disabled={!!busy} className="w-6 h-6 grid place-items-center rounded text-slate-600 hover:text-rose-400 hover:bg-rose-500/10 shrink-0"><X className="w-3 h-3" /></button>
+                    </div>
+                  </li>
+                );
+              })}
+              {!plan.initiatives.length && <li className="rounded-xl border border-dashed border-ink-800 p-5 text-center text-[11px] text-slate-500">No initiatives yet — add the first one below.</li>}
+            </ul>
+            <form
+              onSubmit={(e) => { e.preventDefault(); const t = newIni.trim(); if (!t) return; setNewIni(""); void run("add", () => addPlanInitiative(plan.id, { title: t })); }}
+              className="flex gap-2 mt-2"
+            >
+              <input value={newIni} onChange={(e) => setNewIni(e.target.value)} placeholder="Add an initiative…" className="flex-1 bg-ink-950 border border-ink-800 rounded-lg px-2.5 py-1.5 text-[11px] text-white placeholder:text-slate-600 focus:outline-none focus:border-brand-500/50" />
+              <button type="submit" disabled={!newIni.trim() || !!busy} className="px-3 rounded-lg bg-ink-800 border border-ink-700 text-[11px] font-bold text-slate-300 hover:bg-ink-700 disabled:opacity-40">
+                {busy === "add" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Add"}
+              </button>
+            </form>
+          </div>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
 const PLST: Record<string, string> = { Planning: "bg-violet-500/15 text-violet-300", "In Progress": "bg-sky-500/15 text-sky-300", "On Track": "bg-emerald-500/15 text-emerald-300", "At Risk": "bg-amber-500/15 text-amber-300", Overdue: "bg-rose-500/15 text-rose-300", Completed: "bg-blue-500/15 text-blue-300" };
 const PL_TABS = ["Active Plans", "Upcoming Plans", "Completed Plans", "Archived Plans"];
 const fmtMD = (d: string | null) => d ? new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—";
@@ -420,6 +625,10 @@ function MarketingPlansTab() {
   const [busy, setBusy] = useState(false);
   const [menuId, setMenuId] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
+  // The open plan — its initiatives are real work you can tick off here.
+  const [openPlan, setOpenPlan] = useState<MarketingPlanRow | null>(null);
+  const [genBusy, setGenBusy] = useState(false);
+  const [note, setNote] = useState("");
 
   const reload = async (p = page) => {
     setLoading(true);
@@ -461,14 +670,19 @@ function MarketingPlansTab() {
           <div className="rounded-2xl border border-ink-800 bg-ink-900/50 p-4">
             <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
               <div className="flex items-center gap-1 overflow-x-auto">{PL_TABS.map((t) => <button key={t} onClick={() => setPtab(t)} className={`px-3 py-1.5 text-[12px] font-semibold whitespace-nowrap rounded-lg ${ptab === t ? "text-white bg-ink-800" : "text-slate-500 hover:text-slate-300"}`}>{t}</button>)}</div>
-              <button onClick={() => setCreateOpen(true)} className="inline-flex items-center gap-1.5 px-3.5 h-9 rounded-lg bg-gradient-to-r from-brand-500 to-violet-600 text-white text-sm font-semibold"><Plus className="w-4 h-4" /> Create Plan</button>
+              <div className="flex items-center gap-2">
+                <button onClick={async () => { setGenBusy(true); try { const r = await generateMarketingPlan(); setNote(r.message); setTimeout(() => setNote(""), 6000); await reload(1); } finally { setGenBusy(false); } }} disabled={genBusy} className="inline-flex items-center gap-1.5 px-3.5 h-9 rounded-lg border border-ink-700 text-slate-300 hover:text-white hover:border-ink-600 text-sm font-semibold disabled:opacity-50">
+                  {genBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />} Build from live data
+                </button>
+                <button onClick={() => setCreateOpen(true)} className="inline-flex items-center gap-1.5 px-3.5 h-9 rounded-lg bg-gradient-to-r from-brand-500 to-violet-600 text-white text-sm font-semibold"><Plus className="w-4 h-4" /> Create Plan</button>
+              </div>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-left min-w-[820px]">
                 <thead><tr className="text-[10px] uppercase tracking-wide text-slate-600 border-b border-ink-800"><th className="py-2 font-semibold">Plan</th><th className="font-semibold">Objective</th><th className="font-semibold">Timeline</th><th className="font-semibold">Progress</th><th className="font-semibold">Status</th><th className="font-semibold">Last Updated</th><th></th></tr></thead>
                 <tbody>
                   {rows.map((p) => (
-                    <tr key={p.id} className="border-b border-ink-900 hover:bg-ink-900/40">
+                    <tr key={p.id} onClick={(e) => { if (!(e.target as HTMLElement).closest("button")) setOpenPlan(p); }} className="border-b border-ink-900 hover:bg-ink-900/40 cursor-pointer">
                       <td className="py-2.5"><div className="flex items-center gap-2"><span className="w-7 h-7 rounded-lg bg-brand-600/15 text-brand-300 grid place-items-center shrink-0"><FolderOpen className="w-3.5 h-3.5" /></span><div className="min-w-0"><div className="text-[12px] font-bold text-white truncate max-w-[160px]">{p.name}</div><div className="text-[9px] text-slate-600">{fmtMD(p.startDate)} – {fmtMD(p.endDate)}</div></div></div></td>
                       <td className="text-[11px] text-slate-400 truncate max-w-[160px]">{p.objective}</td>
                       <td className="text-[10px] text-slate-500 whitespace-nowrap">{fmtMD(p.startDate)} – {fmtMD(p.endDate)}</td>
@@ -549,6 +763,14 @@ function MarketingPlansTab() {
       </Card></FadeUp>
 
       {createOpen && <CreatePlanModal onClose={() => setCreateOpen(false)} onSaved={() => { setCreateOpen(false); reload(1); }} />}
+      {note && <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-[60] rounded-xl bg-ink-800 border border-ink-700 px-4 py-2.5 text-[12px] font-semibold text-white shadow-2xl max-w-[90vw]">{note}</div>}
+      {openPlan && (
+        <PlanDetails
+          plan={openPlan}
+          onChange={(p) => { setOpenPlan(p); void reload(page); }}
+          onClose={() => setOpenPlan(null)}
+        />
+      )}
     </div>
   );
 }
@@ -591,10 +813,10 @@ function MiniLines({ data }: { data: { label: string; sessions: number; conversi
   );
 }
 
-function InsightsTab({ data }: { data: MarketingData }) {
+function InsightsTab({ data, onSel, goTab }: { data: MarketingData; onSel: (d: Detail) => void; goTab: (t: string) => void }) {
   const ins = data.insights!;
   const maxCity = Math.max(1, ...data.topPages.map((p) => p.views));
-  const mv = ins.seo.movement; const mvTotal = Math.max(1, mv.improved + mv.noChange + mv.declined);
+  const mv = ins.seo.movement; const mvTotal = mv ? Math.max(1, mv.improved + mv.noChange + mv.declined) : 0;
   return (
     <>
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
@@ -620,7 +842,7 @@ function InsightsTab({ data }: { data: MarketingData }) {
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
         <FadeUp><Card title="Campaign Performance Insights" right={<ViewAll label="View Full Report" />}>
           <div className="overflow-x-auto"><table className="w-full text-left"><thead><tr className="text-[9px] uppercase tracking-wide text-slate-600 border-b border-ink-800"><th className="py-1.5 font-semibold">Campaign</th><th className="font-semibold text-right">Sessions</th><th className="font-semibold text-right">Conv.</th><th className="font-semibold text-right">Revenue</th><th className="font-semibold text-right">ROI</th></tr></thead>
-            <tbody>{data.campaigns.map((c, i) => <tr key={i} className="border-b border-ink-900"><td className="py-2 text-[11px] text-white font-semibold truncate max-w-[110px]">{c.campaign}</td><td className="text-[10px] text-slate-300 text-right tabular-nums">{kfmt(c.sessions)}</td><td className="text-[10px] text-slate-300 text-right tabular-nums">{c.conversions}</td><td className="text-[10px] text-white text-right tabular-nums">{kfmt(c.revenue)}</td><td className={`text-[10px] text-right font-bold ${c.roi >= 0 ? "text-emerald-400" : "text-rose-400"}`}>{c.roi}%</td></tr>)}
+            <tbody>{data.campaigns.map((c, i) => <tr key={i} onClick={() => onSel({ title: c.campaign, subtitle: "Category campaign — every number below is live platform data for this category.", badge: { label: c.roi >= 0 ? "Positive ROI" : "Negative ROI", cls: c.roi >= 0 ? "bg-emerald-500/15 text-emerald-300" : "bg-rose-500/15 text-rose-300" }, rows: [["Sessions", c.sessions.toLocaleString()], ["Conversions (calls + WhatsApp)", String(c.conversions)], ["Conversion rate", c.rate + "%"], ["Revenue attributed", "AED " + c.revenue.toLocaleString()], ["ROI", c.roi + "%"]], why: c.conversions === 0 ? "This category gets traffic but zero calls or WhatsApp taps — the listings are seen and skipped. That is a conversion problem, not a traffic problem." : "Sessions are converting into real contact events.", note: "Revenue is attributed by this category share of total views. Conversions count real call + WhatsApp taps on listings.", cta: { label: "Open Performance breakdown", go: () => goTab("Performance") } })} className="border-b border-ink-900 cursor-pointer hover:bg-ink-800/40 transition-colors"><td className="py-2 text-[11px] text-white font-semibold truncate max-w-[110px]">{c.campaign}</td><td className="text-[10px] text-slate-300 text-right tabular-nums">{kfmt(c.sessions)}</td><td className="text-[10px] text-slate-300 text-right tabular-nums">{c.conversions}</td><td className="text-[10px] text-white text-right tabular-nums">{kfmt(c.revenue)}</td><td className={`text-[10px] text-right font-bold ${c.roi >= 0 ? "text-emerald-400" : "text-rose-400"}`}>{c.roi}%</td></tr>)}
             {data.campaigns.length === 0 && <tr><td colSpan={5} className="py-5 text-center text-[11px] text-slate-500">No campaign data yet.</td></tr>}</tbody></table></div>
         </Card></FadeUp>
 
@@ -633,12 +855,25 @@ function InsightsTab({ data }: { data: MarketingData }) {
           <div className="grid grid-cols-2 gap-2 mb-3">
             {([["Organic Sessions", kfmt(ins.seo.organicSessions)], ["SEO Score", ins.seo.seoScore != null ? `${ins.seo.seoScore}/100` : "—"], ["Issues", String(ins.seo.seoIssues)], ["Avg Position", ins.seo.avgPosition != null ? String(ins.seo.avgPosition) : "—"]] as [string, string][]).map(([l, v]) => <div key={l} className="rounded-lg border border-ink-800 bg-ink-950/40 py-2 text-center"><div className="text-sm font-extrabold text-white">{v}</div><div className="text-[9px] text-slate-500">{l}</div></div>)}
           </div>
-          <div className="text-[10px] uppercase tracking-wide text-slate-600 mb-1.5">Top Keywords</div>
-          <ul className="space-y-1">{ins.seo.topKeywords.map((kw, i) => <li key={i} className="flex items-center gap-2 text-[10px]"><span className="w-4 text-slate-600">#{kw.position}</span><span className="text-slate-300 flex-1 truncate">{kw.keyword}</span><span className="text-white font-semibold">{kfmt(kw.clicks)}</span><span className={kw.change >= 0 ? "text-emerald-400" : "text-rose-400"}>{kw.change >= 0 ? "↑" : "↓"}{Math.abs(kw.change)}</span></li>)}</ul>
-          <div className="text-[10px] uppercase tracking-wide text-slate-600 mt-3 mb-1.5">Keyword Movement</div>
-          <div className="flex items-center gap-3"><MultiDonut segments={[{ value: mv.improved, color: "#34d399" }, { value: mv.noChange, color: "#38bdf8" }, { value: mv.declined, color: "#fb7185" }]} total={mvTotal} label="Total" size={90} stroke={12} />
-            <ul className="space-y-1 flex-1 text-[10px]">{([["Improved", mv.improved, "#34d399"], ["No Change", mv.noChange, "#38bdf8"], ["Declined", mv.declined, "#fb7185"]] as [string, number, string][]).map(([l, v, c]) => <li key={l} className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full" style={{ background: c }} /><span className="text-slate-400 flex-1">{l}</span><span className="text-white font-bold">{Math.round((v / mvTotal) * 100)}%</span></li>)}</ul>
-          </div>
+          {/* Not "top keywords by rank" — we have no rank data. This is our own
+              categories ordered by the views they pull on the site. */}
+          <div className="text-[10px] uppercase tracking-wide text-slate-600 mb-1.5">Top Categories by On-Site Views</div>
+          <ul className="space-y-1">{ins.seo.topKeywords.map((kw, i) => <li key={i} className="flex items-center gap-2 text-[10px]"><span className="w-4 text-slate-600">{kw.position != null ? `#${kw.position}` : i + 1}</span><span className="text-slate-300 flex-1 truncate">{kw.keyword}</span><span className="text-white font-semibold">{kfmt(kw.clicks)}</span><span className={kw.change >= 0 ? "text-emerald-400" : "text-rose-400"}>{kw.change >= 0 ? "↑" : "↓"}{Math.abs(kw.change)}</span></li>)}</ul>
+          {/* Keyword movement needs Search Console. Until it is connected we
+              show nothing rather than the old donut, which actually counted
+              content-brief funnel stages and labelled them ranking movements. */}
+          {mv ? (
+            <>
+              <div className="text-[10px] uppercase tracking-wide text-slate-600 mt-3 mb-1.5">Keyword Movement</div>
+              <div className="flex items-center gap-3"><MultiDonut segments={[{ value: mv.improved, color: "#34d399" }, { value: mv.noChange, color: "#38bdf8" }, { value: mv.declined, color: "#fb7185" }]} total={mvTotal} label="Total" size={90} stroke={12} />
+                <ul className="space-y-1 flex-1 text-[10px]">{([["Improved", mv.improved, "#34d399"], ["No Change", mv.noChange, "#38bdf8"], ["Declined", mv.declined, "#fb7185"]] as [string, number, string][]).map(([l, v, c]) => <li key={l} className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full" style={{ background: c }} /><span className="text-slate-400 flex-1">{l}</span><span className="text-white font-bold">{Math.round((v / mvTotal) * 100)}%</span></li>)}</ul>
+              </div>
+            </>
+          ) : (
+            <div className="mt-3 rounded-lg border border-dashed border-ink-800 p-3 text-[10px] text-slate-500 leading-relaxed">
+              Keyword rankings and movement need Google Search Console. It is not connected, so nothing is claimed here. The list above is on-site views by category, not search positions.
+            </div>
+          )}
         </Card></FadeUp>
       </div>
 
@@ -1104,6 +1339,8 @@ function AgentCollaborationTab() {
   const [acts, setActs] = useState<Activity[]>([]);
   const [briefs, setBriefs] = useState<BriefRow[]>([]);
   const [loading, setLoading] = useState(true);
+  // This tab had zero clickable anything. Every row now opens its real record.
+  const [sel, setSel] = useState<Detail | null>(null);
   useEffect(() => {
     Promise.all([getWorkforce().catch(() => null), getActivity(30).then((r) => r.activities).catch(() => []), listBriefs({ limit: 100 }).then((r) => r.items).catch(() => [] as BriefRow[])])
       .then(([w, a, b]) => { setWf(w); setActs(a || []); setBriefs(b || []); }).finally(() => setLoading(false));
@@ -1169,7 +1406,14 @@ function AgentCollaborationTab() {
               <thead><tr className="text-[9px] uppercase tracking-wide text-slate-600 border-b border-ink-800"><th className="py-1.5 font-semibold">Initiated By</th><th className="font-semibold">With</th><th className="font-semibold">Project</th><th className="font-semibold">Status</th><th className="font-semibold text-right">Last Activity</th></tr></thead>
               <tbody>
                 {collabs.slice(0, 8).map((c) => (
-                  <tr key={c.id} className="border-b border-ink-900">
+                  <tr key={c.id} onClick={() => setSel({
+                    title: c.project,
+                    subtitle: `${c.initiatedBy} handed this to ${c.withAgent}.`,
+                    badge: { label: c.status, cls: REC_STATUS[c.status] || IDEA_STATUS[c.status] || "bg-slate-500/15 text-slate-300" },
+                    rows: [["Initiated by", c.initiatedBy], ["Assigned to", c.withAgent], ["Work", c.purpose], ["Status", c.status], ["Last activity", new Date(c.lastActivity).toLocaleString()]],
+                    why: "A real content brief passed between two agents — this is the handoff, not a mock-up of one.",
+                    note: "Search volume and difficulty on briefs are the research model's estimates: no keyword tool (Ahrefs / Search Console) is connected to this platform.",
+                  })} className="border-b border-ink-900 cursor-pointer hover:bg-ink-800/40 transition-colors">
                     <td className="py-2"><span className="inline-flex items-center gap-1.5 text-[11px] text-slate-300"><InitialBadge name={c.initiatedBy} />{c.initiatedBy.replace(" Agent", "")}</span></td>
                     <td><span className="inline-flex items-center gap-1.5 text-[11px] text-slate-300"><InitialBadge name={c.withAgent} />{c.withAgent.replace(" Agent", "")}</span></td>
                     <td className="text-[11px] text-white font-semibold truncate max-w-[160px]">{c.project}</td>
@@ -1213,7 +1457,14 @@ function AgentCollaborationTab() {
           <ul className="space-y-2">
             {upcoming.length === 0 && <li className="text-[11px] text-slate-500 text-center py-4">Nothing pending.</li>}
             {upcoming.map((b) => (
-              <li key={b.id} className="rounded-lg border border-ink-800 bg-ink-950/40 p-2.5"><div className="text-[11px] font-semibold text-white truncate">{b.title}</div><div className="flex items-center gap-1.5 mt-1 text-[10px] text-slate-500"><span className="text-slate-400">{b.createdByAgent.replace(" Agent", "")}</span><ArrowRight className="w-3 h-3" /><span className="text-slate-400">{b.assignee.replace(" Agent", "")}</span><span className={`ml-auto text-[8px] font-bold px-1.5 py-0.5 rounded ${IDEA_STATUS[b.status] || "bg-slate-500/15 text-slate-300"}`}>{b.status}</span></div></li>
+              <li key={b.id}><button onClick={() => setSel({
+                title: b.title,
+                subtitle: b.description || `${b.contentType} · ${b.category}`,
+                badge: { label: b.status, cls: IDEA_STATUS[b.status] || "bg-slate-500/15 text-slate-300" },
+                rows: [["Target keyword", b.primaryKeyword || "—"], ["From", b.createdByAgent], ["To", b.assignee], ["Type", b.contentType], ["Category", b.category], ["Target length", b.targetWordCount ? `${b.targetWordCount} words` : "—"], ["Due", b.dueDate ? new Date(b.dueDate).toLocaleDateString() : "—"]],
+                why: "A real brief waiting to be picked up by the agent it was handed to.",
+                note: "Search volume / difficulty on briefs are research estimates — no keyword tool is connected.",
+              })} className="w-full text-left rounded-lg border border-ink-800 bg-ink-950/40 p-2.5 hover:bg-ink-900/60 transition-colors group"><div className="text-[11px] font-semibold text-white truncate group-hover:text-brand-200 transition-colors">{b.title}</div><div className="flex items-center gap-1.5 mt-1 text-[10px] text-slate-500"><span className="text-slate-400">{b.createdByAgent.replace(" Agent", "")}</span><ArrowRight className="w-3 h-3" /><span className="text-slate-400">{b.assignee.replace(" Agent", "")}</span><span className={`ml-auto text-[8px] font-bold px-1.5 py-0.5 rounded ${IDEA_STATUS[b.status] || "bg-slate-500/15 text-slate-300"}`}>{b.status}</span></div></button></li>
             ))}
           </ul>
         </Card></FadeUp>
@@ -1230,6 +1481,7 @@ function AgentCollaborationTab() {
       </div>
 
       <div className="flex items-center gap-1.5 text-[10px] text-slate-600"><Sparkles className="w-3 h-3" /> Collaboration data is computed live from real agent activity, handoffs &amp; task completion — no demo data.</div>
+      {sel && <DetailsDrawer d={sel} onClose={() => setSel(null)} />}
     </div>
   );
 }

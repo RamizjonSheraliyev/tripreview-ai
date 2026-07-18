@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import Sidebar from "@/components/Sidebar";
 import AgentGate from "@/components/AgentGate";
+import DestinationAreasPanel from "@/components/DestinationAreasPanel";
 import { FadeUp, Stagger, Item, motion } from "@/components/motion";
 import {
   fetchMe, getStoredUser, listLandingPages, getLandingPageById, generateLandingPage,
@@ -417,6 +418,9 @@ export default function PageBuilderPage() {
               <p className="text-[10px] text-slate-600 mt-2">The category decides which cards, providers and deals the live page shows. Auto-detect reads it from the keyword.</p>
             </div>
           </FadeUp>
+
+          {/* Destination agent — fills the "Explore <city> by Areas" cards */}
+          <FadeUp><DestinationAreasPanel onNote={note} /></FadeUp>
 
           <div className="grid grid-cols-1 xl:grid-cols-12 gap-5">
             {/* Pages list */}

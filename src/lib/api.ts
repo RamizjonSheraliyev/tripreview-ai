@@ -1306,8 +1306,19 @@ export function onbActivate(id: string) { return request<{ ok: boolean; message?
 export function onbReject(id: string, reason = "") { return request<{ ok: boolean; message?: string }>(`/admin/agents/onboarding/providers/${id}/reject`, { method: "POST", body: JSON.stringify({ reason }) }); }
 export function onbRequestInfo(id: string, fields: string[] = []) { return request<{ ok: boolean; message?: string; fields?: string[] }>(`/admin/agents/onboarding/providers/${id}/request-info`, { method: "POST", body: JSON.stringify({ fields }) }); }
 export function onbDraft(id: string) { return request<{ ok: boolean; message?: string }>(`/admin/agents/onboarding/providers/${id}/draft`, { method: "POST" }); }
+// Profile-claim actions (id = ProfileClaim id). Approve grants the verified badge.
+export function onbApproveClaim(id: string) { return request<{ ok: boolean; message?: string }>(`/admin/agents/onboarding/claims/${id}/approve`, { method: "POST" }); }
+export function onbRejectClaim(id: string, reason = "") { return request<{ ok: boolean; message?: string }>(`/admin/agents/onboarding/claims/${id}/reject`, { method: "POST", body: JSON.stringify({ reason }) }); }
 
-export type ClaimRow = { id: string; company: string; contact: string; contactEmail: string; category: string; location: string; claimedBy: string; claimedEmail: string; phone: string; channel: string; submittedAt: string; status: string; score: number; assignedTo: string; logoUrl: string; rating: number; ratingCount: number; reviewedAt: string | null };
+// Resolve a possibly-relative media path (local /uploads) to an absolute URL.
+export function resolveMedia(url?: string | null): string {
+  if (!url) return "";
+  if (/^https?:\/\//i.test(url)) return url;
+  const origin = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:5001/api").replace(/\/api\/?$/, "");
+  return url.startsWith("/uploads") ? `${origin}${url}` : url;
+}
+
+export type ClaimRow = { id: string; providerId?: string; company: string; contact: string; contactEmail: string; category: string; location: string; claimedBy: string; claimedEmail: string; phone: string; whatsapp?: string; channel: string; submittedAt: string; status: string; emailVerified?: boolean; licenseUrl?: string; adminNote?: string; score: number; assignedTo: string; logoUrl: string; rating: number; ratingCount: number; reviewedAt: string | null };
 export type ClaimRequestsData = {
   kpis: { total: Kpi; newRequests: Kpi; underReview: Kpi; verified: Kpi; rejected: Kpi; avgReviewDays: Kpi };
   statusDist: { total: number; segments: Seg[] };
@@ -1991,3 +2002,10 @@ export function blScanCompetitor(competitor?: string) { return request<{ ok: boo
 // Monitoring + reports
 export function blListMonitored() { return request<{ rows: BlRow[] }>("/admin/agents/backlink/monitor"); }
 export function blGenerateReport(period: "weekly" | "monthly") { return request<{ ok: boolean; period: string; content: string; filename: string; stats: { newLive: number; lost: number; newOpps: number; outreachSent: number; guest: number } }>("/admin/agents/backlink/report", { method: "POST", body: JSON.stringify({ period }) }); }
+
+// ---- Destination agent (Explore <city> by Areas cards) ----
+export type AgentDestination = { id: string; name: string; slug: string; country: string; status: string; areaCount: number };
+export type DestinationArea = { name: string; slug: string; blurb: string; type: string; image: string };
+export function listAgentDestinations() { return request<{ destinations: AgentDestination[] }>("/admin/agents/destinations"); }
+export function generateDestinationAreas(id: string) { return request<{ ok: boolean; name: string; areas: DestinationArea[]; count: number; source: string }>(`/admin/agents/destinations/${id}/generate-areas`, { method: "POST" }); }
+export function generateAllDestinationAreas() { return request<{ ok: boolean; updated: number; results: { name: string; count: number }[] }>("/admin/agents/destinations/generate-all-areas", { method: "POST" }); }

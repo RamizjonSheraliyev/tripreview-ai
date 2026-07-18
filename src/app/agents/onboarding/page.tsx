@@ -11,7 +11,7 @@ import Sidebar from "@/components/Sidebar";
 import AgentGate from "@/components/AgentGate";
 import { FadeUp, Stagger, Item, motion } from "@/components/motion";
 import {
-  fetchMe, getStoredUser, getOnboardingOverview, getOnboardingProviders, getClaimRequests, getVerificationCenter, getProfileCompletion, getServiceListings, setListingStatus, getSubscriptions, updateSubscriptionPlan, getApprovalQueue, queueAction, getMissingInformation, getOnboardingFunnel, getBadgeCenter, onbVerify, onbActivate, onbReject, onbRequestInfo,
+  fetchMe, getStoredUser, getOnboardingOverview, getOnboardingProviders, getClaimRequests, getVerificationCenter, getProfileCompletion, getServiceListings, setListingStatus, getSubscriptions, updateSubscriptionPlan, getApprovalQueue, queueAction, getMissingInformation, getOnboardingFunnel, getBadgeCenter, onbVerify, onbActivate, onbReject, onbRequestInfo, onbApproveClaim, onbRejectClaim, resolveMedia,
   getGrowthJobs, startDiscoverySweep, startReviewHarvest, type GrowthJob,
   type OnboardingOverview, type OnbProvider, type ClaimRequestsData, type VerificationData, type CompletionData, type CompletionRow, type ServiceListingsData, type ServiceRow, type SubscriptionsData, type SubPackage, type ApprovalQueueData, type QueueRow, type MissingInfoData, type MissingRow, type FunnelData, type BadgeCenterData, type BadgeRow, type Kpi, type Seg,
 } from "@/lib/api";
@@ -463,7 +463,14 @@ function ClaimRequestsView({ flash, reload }: { flash: (m: string) => void; relo
   useEffect(() => { fetchData(); }, [fetchData]);
   useEffect(() => { setPage(1); }, [q, status, category]);
 
-  const verify = async (id: string) => { setBusy(id); try { const r = await onbVerify(id); flash(r.ok ? `✓ ${r.message}` : (r.message || "Failed")); await fetchData(); reload(); } finally { setBusy(""); } };
+  // Approve a website profile-claim → grants the verified badge (via claimService).
+  const approve = async (id: string) => { setBusy(id); try { const r = await onbApproveClaim(id); flash(r.ok ? `✓ ${r.message}` : (r.message || "Failed")); await fetchData(); reload(); } finally { setBusy(""); } };
+  const reject = async (id: string) => {
+    const reason = window.prompt("Reject reason (emailed to the applicant, optional):", "");
+    if (reason === null) return; // cancelled
+    setBusy(id);
+    try { const r = await onbRejectClaim(id, reason); flash(r.ok ? `✓ ${r.message}` : (r.message || "Failed")); await fetchData(); reload(); } finally { setBusy(""); }
+  };
 
   if (loading && !d) return <div className="grid place-items-center py-32 text-slate-600"><Loader2 className="w-8 h-8 animate-spin" /></div>;
   if (!d) return null;
@@ -505,7 +512,15 @@ function ClaimRequestsView({ flash, reload }: { flash: (m: string) => void; relo
                         <td className="px-2"><Badge s={r.status} /></td>
                         <td className="px-2"><div className="flex items-center gap-1.5 w-[72px]"><div className="flex-1"><Bar pct={r.score} color={r.score >= 80 ? "#34d399" : r.score >= 50 ? "#fbbf24" : "#fb7185"} /></div><span className="text-[10px] text-slate-400 w-6">{r.score}</span></div></td>
                         <td className="px-2 text-slate-400 whitespace-nowrap">{r.assignedTo}</td>
-                        <td className="px-2">{r.status !== "Verified" ? <button onClick={() => verify(r.id)} disabled={busy === r.id} title="Verify" className="w-7 h-7 grid place-items-center rounded-lg bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25 disabled:opacity-50">{busy === r.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <BadgeCheck className="w-3.5 h-3.5" />}</button> : <Eye className="w-4 h-4 text-slate-600 mx-auto" />}</td>
+                        <td className="px-2">
+                          <div className="flex items-center gap-1 justify-end">
+                            {r.licenseUrl && <a href={resolveMedia(r.licenseUrl)} target="_blank" rel="noreferrer" title="View trade license" className="w-7 h-7 grid place-items-center rounded-lg bg-ink-800/60 text-slate-300 hover:bg-ink-700"><FileText className="w-3.5 h-3.5" /></a>}
+                            {(r.status === "New Request" || r.status === "Under Review") ? <>
+                              <button onClick={() => approve(r.id)} disabled={busy === r.id || !r.emailVerified} title={r.emailVerified ? "Approve & grant verified badge" : "Applicant must verify their email first"} className="w-7 h-7 grid place-items-center rounded-lg bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25 disabled:opacity-40">{busy === r.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <BadgeCheck className="w-3.5 h-3.5" />}</button>
+                              <button onClick={() => reject(r.id)} disabled={busy === r.id} title="Reject claim" className="w-7 h-7 grid place-items-center rounded-lg bg-rose-500/15 text-rose-300 hover:bg-rose-500/25 disabled:opacity-40"><XCircle className="w-3.5 h-3.5" /></button>
+                            </> : <Eye className="w-4 h-4 text-slate-600" />}
+                          </div>
+                        </td>
                       </motion.tr>
                     ); })}
                 </tbody>

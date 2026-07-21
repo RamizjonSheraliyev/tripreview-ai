@@ -293,7 +293,7 @@ export default function SeoAgentPage() {
                       <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded shrink-0 mt-0.5 ${sevPill(p.severity)}`}>{p.severity}</span>
                       <div className="min-w-0 flex-1"><div className="text-[12px] font-semibold text-white">{p.title}</div><div className="text-[10px] text-slate-500">{p.page || p.path} · {fmtDate(p.createdAt)}</div><p className="text-[11px] text-slate-400 mt-1 line-clamp-2">{p.detail}</p></div>
                       <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
-                        {p.fixType && <button onClick={() => decide(p._id, "approve")} disabled={!!busyId} title="Approve & auto-fix" className="w-8 h-8 grid place-items-center rounded-lg bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25 disabled:opacity-50">{busyId === p._id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-4 h-4" />}</button>}
+                        {(p.fixType || p.source === "seo") && <button onClick={() => decide(p._id, "approve")} disabled={!!busyId} title="Approve & auto-fix" className="w-8 h-8 grid place-items-center rounded-lg bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25 disabled:opacity-50">{busyId === p._id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-4 h-4" />}</button>}
                         <button onClick={() => decide(p._id, "reject")} disabled={!!busyId} title="Reject" className="w-8 h-8 grid place-items-center rounded-lg border border-rose-500/40 text-rose-300 hover:bg-rose-500/10 disabled:opacity-50"><X className="w-4 h-4" /></button>
                       </div>
                     </div>
@@ -353,7 +353,7 @@ export default function SeoAgentPage() {
                 {p.page && <div className="text-[11px] text-slate-500">Page: <span className="text-slate-300">{p.page}</span></div>}
                 {p.path && <a href={pageUrl(p.path)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-emerald-400 hover:underline"><Globe className="w-3.5 h-3.5" /> View affected page <ArrowRight className="w-3 h-3" /></a>}
                 <div className="flex items-center gap-2 pt-2 border-t border-ink-800">
-                  {p.fixType && <button onClick={() => decide(p._id, "approve")} disabled={!!busyId} className="flex-1 inline-flex items-center justify-center gap-1.5 h-10 rounded-lg bg-gradient-to-r from-emerald-500 to-teal-600 text-white text-sm font-semibold disabled:opacity-50">{busyId === p._id ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />} Approve &amp; Auto-fix</button>}
+                  {(p.fixType || p.source === "seo") && <button onClick={() => decide(p._id, "approve")} disabled={!!busyId} className="flex-1 inline-flex items-center justify-center gap-1.5 h-10 rounded-lg bg-gradient-to-r from-emerald-500 to-teal-600 text-white text-sm font-semibold disabled:opacity-50">{busyId === p._id ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />} Approve &amp; Auto-fix</button>}
                   <button onClick={() => decide(p._id, "reject")} disabled={!!busyId} className="inline-flex items-center justify-center gap-1.5 px-4 h-10 rounded-lg border border-rose-500/40 text-rose-300 text-sm font-semibold hover:bg-rose-500/10 disabled:opacity-50"><X className="w-4 h-4" /> Reject</button>
                 </div>
               </div>); })()}

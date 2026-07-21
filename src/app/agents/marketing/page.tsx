@@ -19,7 +19,7 @@ import {
   generateMarketingPlan, setPlanInitiative, addPlanInitiative, deletePlanInitiative,
   getMarketingCampaigns, syncMarketingCampaigns,
   getBriefBoard, listBriefs, advanceBrief, updateBrief, deleteBrief,
-  getStrategy, type StrategyData,
+  getStrategy, assignAgentTask, type StrategyData,
   getWorkforce, getActivity, type Workforce, type WfAgent, type Activity,
   type MarketingData, type AgentChatTurn, type MarketingTasks, type TaskRow,
   type MarketingPlansBoard, type MarketingPlanRow, type AdCampaigns, type AdCampaignRow,
@@ -1204,18 +1204,37 @@ const EFFORT: Record<string, string> = { High: "text-rose-300", Medium: "text-am
 const REC_CAT_COLORS = ["#8b5cf6", "#34d399", "#fbbf24", "#38bdf8", "#fb7185", "#a78bfa"];
 const confOf = (p: string) => (p === "High" ? 90 : p === "Medium" ? 78 : 65);
 
+// Owner display-name → chat/agent id, for turning a recommendation into a
+// real assigned task (mirrors OWNER_ID in backend aiCeo.js).
+const OWNER_AGENT: Record<string, string> = {
+  "AI CEO": "ceo", "AI CEO / Orchestrator": "ceo", "Marketing Director": "marketing", "SEO Agent": "seo",
+  "Copywriter Agent": "copywriter", "Publisher Agent": "publisher", "Content Distribution": "distribution",
+  "Competitive Intelligence": "intel", "Marketplace Growth": "marketplace", "Sales Agent": "sales", "Provider Onboarding": "onboarding",
+};
+
 function RecommendationsTab() {
   const [s, setS] = useState<StrategyData | null>(null);
   const [loading, setLoading] = useState(true);
   const [catF, setCatF] = useState("All");
   const [sel, setSel] = useState<Rec | null>(null);
+  const [assignBusy, setAssignBusy] = useState(false);
+  const [note, setNote] = useState("");
   useEffect(() => { getStrategy().then(setS).catch(() => setS(null)).finally(() => setLoading(false)); }, []);
+  const assign = async () => {
+    if (!sel) return;
+    setAssignBusy(true);
+    try {
+      const r = await assignAgentTask(OWNER_AGENT[sel.owner] || "ceo", sel.title, sel.why || "");
+      setNote(`✓ Assigned to ${r.agent} — it's now a real task in the Task Center.`);
+    } catch { setNote("Could not assign the task."); }
+    finally { setAssignBusy(false); setTimeout(() => setNote(""), 5000); }
+  };
 
   if (loading) return <div className="grid place-items-center py-24 text-slate-600"><Loader2 className="w-7 h-7 animate-spin" /></div>;
   if (!s) return <div className="rounded-2xl border border-ink-800 bg-ink-900/50 p-8 text-center text-slate-500 text-[13px]">Couldn&apos;t load recommendations.</div>;
 
   const recs: Rec[] = [];
-  (s.topOpportunities || []).forEach((o, i) => recs.push({ id: o.id || `top-${i}`, title: o.title, category: "Content & SEO", impact: o.impact, effort: o.effort || "Medium", confidence: o.confidence || confOf(o.impact), status: "In Progress", traffic: o.trafficPotential || 0, why: o.reason || o.detail || "", actions: o.plan || [], owner: o.agent || "SEO Agent", path: o.path }));
+  (s.topOpportunities || []).forEach((o, i) => recs.push({ id: o.id || `top-${i}`, title: o.title, category: "Content & SEO", impact: o.impact, effort: o.effort || "Medium", confidence: o.confidence || confOf(o.impact), status: "Proposed", traffic: o.trafficPotential || 0, why: o.reason || o.detail || "", actions: o.plan || [], owner: o.agent || "SEO Agent", path: o.path }));
   (s.contentOpps || []).forEach((c, i) => recs.push({ id: `content-${i}`, title: `Build a "${c.topic}" content cluster`, category: "Content & SEO", impact: c.priority, effort: "Medium", confidence: confOf(c.priority), status: c.status, traffic: c.potentialTraffic, why: `"${c.keyword}" has ~${kfmt(c.searchVolume)} monthly search demand.`, actions: ["Research target keywords", "Write the SEO brief", "Publish & internally link"], owner: c.assignedTo }));
   (s.marketplaceOpps || []).filter((m) => m.potentialProviders > 0).forEach((m, i) => recs.push({ id: `mkt-${i}`, title: `Expand ${m.opportunity}`, category: "Categories", impact: m.priority, effort: "High", confidence: confOf(m.priority), status: m.status, traffic: 0, why: `${m.potentialProviders} more providers needed to cover demand in this category.`, actions: ["Discover providers", "Outreach via email/WhatsApp", "Onboard & verify"], owner: m.assignedTo }));
   (s.competitiveOpps || []).forEach((c, i) => recs.push({ id: `comp-${i}`, title: c.opportunity, category: "Landing Pages", impact: c.impact, effort: "Medium", confidence: confOf(c.impact), status: "Planned", traffic: 0, why: `${c.competitorGap} vs competitors — ${c.action}.`, actions: [c.action], owner: "SEO Agent" }));
@@ -1318,9 +1337,15 @@ function RecommendationsTab() {
               {([["Owner", sel.owner], ["Status", sel.status]] as [string, string][]).map(([l, v]) => <div key={l} className="rounded-lg border border-ink-800 bg-ink-900/50 p-2"><div className="text-[10px] text-slate-500">{l}</div><div className="text-[11px] text-slate-200 font-semibold truncate mt-0.5">{v}</div></div>)}
             </div>
             {sel.path && <a href={`${(process.env.NEXT_PUBLIC_SITE_URL || "https://tripreview.ae").replace(/\/+$/, "")}/en${sel.path === "/" ? "" : sel.path}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-brand-400 hover:underline"><Globe className="w-3.5 h-3.5" /> View affected page <ArrowRight className="w-3 h-3" /></a>}
+            {/* Turn the idea into real work — creates an AgentTask + a Task
+                Center row assigned to the owner, instead of the idea dying here. */}
+            <button onClick={assign} disabled={assignBusy} className="w-full inline-flex items-center justify-center gap-1.5 rounded-xl px-4 py-2.5 text-[12px] font-bold bg-brand-600 text-white hover:bg-brand-500 disabled:opacity-40 transition-colors">
+              {assignBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />} Assign to {sel.owner}
+            </button>
           </div>
         </div>
       )}
+      {note && <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-[70] rounded-xl bg-ink-800 border border-ink-700 px-4 py-2.5 text-[12px] font-semibold text-white shadow-2xl">{note}</div>}
       <div className="flex items-center gap-1.5 text-[10px] text-slate-600"><Sparkles className="w-3 h-3" /> Recommendations are computed from real traffic, inventory &amp; SEO signals — no demo, no fabricated revenue.</div>
     </div>
   );

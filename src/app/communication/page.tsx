@@ -14,7 +14,7 @@ import { FadeUp, motion } from "@/components/motion";
 import { AGENTS, type AgentDef } from "@/lib/agents";
 import { speakReply, stopSpeaking, sttSupported, createRecognizer } from "@/lib/voice";
 import {
-  fetchMe, getStoredUser, getWorkforce, getTeam, agentChat, getCeoOrchestration,
+  fetchMe, getStoredUser, getWorkforce, getTeam, getCeoOrchestration,
   getAgentToggles, setAgentEnabled,
   chatHistoryApi, chatSendApi, chatActApi, type ChatMsg, type ChatCard, type ChatStep,
   listAnnouncements, getAnnouncement, getAnnouncementStats, createAnnouncement, updateAnnouncement, deleteAnnouncement,
@@ -628,6 +628,18 @@ function AgentConversations({ wf, tasks }: { wf: Workforce | null; tasks: OrchTa
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [msgs, busy]);
   const pickTopic = (id: string) => { setSelId(id); setMsgs([]); setReacts({}); setTo(""); };
 
+  // Persisted topic history — each topic thread lives in Mongo under
+  // "topic:<id>", so the conversation survives reloads and redeploys instead
+  // of resetting to the template opener.
+  useEffect(() => {
+    let off = false;
+    chatHistoryApi(`topic:${selId}`).then((r) => {
+      if (off) return;
+      setMsgs(r.messages.map((m, i) => fromServer(m, MID++ + i)));
+    }).catch(() => {});
+    return () => { off = true; };
+  }, [selId]);
+
   const statusOf = (id: string) => wf?.agents.find((a) => a.id === id)?.status || "Idle";
   const react = (mid: number, e: string) => setReacts((r) => ({ ...r, [mid]: { ...(r[mid] || {}), [e]: (r[mid]?.[e] || 0) + 1 } }));
 
@@ -640,9 +652,12 @@ function AgentConversations({ wf, tasks }: { wf: Workforce | null; tasks: OrchTa
     setBusy(true);
     try {
       const history: AgentChatTurn[] = msgs.slice(-10).map((m) => ({ role: m.role, name: m.name, text: m.text }));
-      const r = await agentChat(t || "Analyze this image.", { history, mentionId: mention || (isOpener ? topic.lead : ""), imageBase64: img?.base64, imageType: img?.type });
-      setMsgs((m) => [...m, { id: MID++, role: "agent", agentId: r.agentId, name: r.agentName, text: r.text, ts: Date.now() }]);
-      if (voiceOut && r.text) speakReply(r.text);
+      // Persisted path — the same engine as the Team Inbox, keyed to this
+      // topic's own conversation, so nothing is lost on reload.
+      const r = await chatSendApi(t || "Analyze this image.", { history, conversation: `topic:${selId}`, mentionId: mention || (isOpener ? topic.lead : ""), imageBase64: img?.base64, imageType: img?.type });
+      setMsgs((m) => [...m, ...r.messages.map((sm) => fromServer(sm, MID++))]);
+      const last = r.messages[r.messages.length - 1];
+      if (voiceOut && last?.text) speakReply(last.text);
     } catch {
       setMsgs((m) => [...m, { id: MID++, role: "agent", agentId: "ceo", name: "AI CEO / Orchestrator", text: "Couldn't reach the team right now — check the LLM key/quota.", ts: Date.now() }]);
     } finally { setBusy(false); }

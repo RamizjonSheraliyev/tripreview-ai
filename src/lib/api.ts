@@ -234,6 +234,7 @@ export type CeoProposalItem = {
   status: "proposed" | "applied" | "rejected" | "failed";
   result: string;
   createdAt: string;
+  source?: string; // "seo" for crawl-generated recommendations
 };
 export function getCeoAudit() {
   return request<{ audit: CeoAuditSnapshot; proposals: CeoProposalItem[]; llm: boolean }>("/admin/agents/ceo/audit");
@@ -379,8 +380,8 @@ export function getStrategy() {
 export function generateStrategy() {
   return request<StrategyData>("/admin/agents/ceo/strategy/generate", { method: "POST" });
 }
-export function assignAgentTask(agentId: string, title: string) {
-  return request<{ ok: boolean; id: string; agent: string }>(`/admin/agents/ceo/agents/${agentId}/assign`, { method: "POST", body: JSON.stringify({ title }) });
+export function assignAgentTask(agentId: string, title: string, description = "") {
+  return request<{ ok: boolean; id: string; agent: string }>(`/admin/agents/ceo/agents/${agentId}/assign`, { method: "POST", body: JSON.stringify({ title, description }) });
 }
 export function toggleAgentPause(agentId: string, paused?: boolean) {
   return request<{ ok: boolean; agentId: string; paused: boolean }>(`/admin/agents/ceo/agents/${agentId}/pause`, { method: "POST", body: JSON.stringify(paused === undefined ? {} : { paused }) });
@@ -395,18 +396,22 @@ export function setAutomationRule(key: string, on: boolean) {
 // Growth jobs — discovery sweep + review harvest (minutes-long, polled).
 export type GrowthJob = {
   running: boolean; startedAt: string | null; finishedAt: string | null;
-  progress: string; stats: Record<string, number>; log: string[]; error: string;
+  progress: string; stats: Record<string, number | string>; log: string[]; error: string; stopRequested?: boolean;
 };
 export function getGrowthJobs() {
   return request<{ discovery: GrowthJob; harvest: GrowthJob }>("/admin/agents/growth/jobs");
 }
-export function startDiscoverySweep(perCategory = 8) {
-  return request<{ ok: boolean; started?: boolean; message: string }>("/admin/agents/growth/discover-sweep", { method: "POST", body: JSON.stringify({ perCategory }) });
+// categories: [] = full sweep across every category; ["Car Rental"] = focused.
+export function startDiscoverySweep(perCategory = 8, categories: string[] = []) {
+  return request<{ ok: boolean; started?: boolean; message: string }>("/admin/agents/growth/discover-sweep", { method: "POST", body: JSON.stringify({ perCategory, categories }) });
 }
-export function startReviewHarvest(target = 800, perProvider = 120) {
-  // Deep mode: walks car & yacht companies first and keeps searching per
-  // company (platform by platform) until 100+ reviews or the web runs dry.
-  return request<{ ok: boolean; started?: boolean; message: string }>("/admin/agents/growth/harvest-reviews", { method: "POST", body: JSON.stringify({ target, perProvider }) });
+// category: "" = all providers; "Car Rental" etc. narrows the harvest.
+export function startReviewHarvest(target = 800, perProvider = 120, category = "") {
+  return request<{ ok: boolean; started?: boolean; message: string }>("/admin/agents/growth/harvest-reviews", { method: "POST", body: JSON.stringify({ target, perProvider, category }) });
+}
+// Founder's stop button — halts a running discovery/harvest after the current company.
+export function stopGrowthJob(kind: "discovery" | "harvest") {
+  return request<{ ok: boolean; message: string }>("/admin/agents/growth/stop", { method: "POST", body: JSON.stringify({ kind }) });
 }
 
 // Agent master switches — OFF by default; admin flips them on to activate (token-saving).
@@ -566,13 +571,14 @@ export type ChatMsg = {
 export function chatHistoryApi(conversation = "all") {
   return request<{ messages: ChatMsg[] }>(`/admin/agents/ceo/chat/history?conversation=${encodeURIComponent(conversation)}`);
 }
-export function chatSendApi(message: string, opts: { history?: AgentChatTurn[]; mentionId?: string; imageBase64?: string; imageType?: string } = {}) {
+export function chatSendApi(message: string, opts: { history?: AgentChatTurn[]; mentionId?: string; conversation?: string; imageBase64?: string; imageType?: string } = {}) {
   return request<{ messages: ChatMsg[] }>("/admin/agents/ceo/chat/send", {
     method: "POST",
     body: JSON.stringify({
       message,
       history: (opts.history || []).map((h) => ({ role: h.role, name: h.name, text: h.text })),
       mentionId: opts.mentionId || "",
+      conversation: opts.conversation || "",
       imageBase64: opts.imageBase64 || "",
       imageType: opts.imageType || "image/png",
     }),
@@ -1048,7 +1054,7 @@ export type TopicResearch = {
   intents: string[]; categories: string[];
 };
 export function getTopicResearch() { return request<TopicResearch>("/admin/agents/ceo/topics"); }
-export function discoverTopics() { return request<{ ok: boolean; created: number; topics: string[] }>("/admin/agents/ceo/topics/discover", { method: "POST" }); }
+export function discoverTopics(topic = "") { return request<{ ok: boolean; created: number; skippedCovered?: number; topics: string[]; message?: string }>("/admin/agents/ceo/topics/discover", { method: "POST", body: JSON.stringify({ topic }) }); }
 
 // ---- Content Gaps ----
 export type ContentGaps = {

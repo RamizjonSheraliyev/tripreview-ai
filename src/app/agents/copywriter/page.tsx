@@ -427,6 +427,18 @@ function BriefsTab() {
                         <button onClick={() => setMenuId(menuId === b.id ? "" : b.id)} className="w-7 h-7 grid place-items-center rounded-lg text-slate-500 hover:bg-ink-800 hover:text-slate-300"><MoreHorizontal className="w-4 h-4" /></button>
                         {menuId === b.id && (
                           <div className="absolute right-2 top-9 z-30 w-36 rounded-xl border border-ink-700 bg-ink-900 shadow-2xl p-1">
+                            {b.status !== "Published" && (
+                              <button
+                                onClick={() => {
+                                  setMenuId("");
+                                  // Long job (1-2 min) — fire it and let the board refresh when it lands.
+                                  void generateContent({ briefId: b.id, topic: "", type: "Blog Post" }).then((r) => { void reload(page); if (!r.ok) window.alert(r.message || "Draft failed."); }).catch(() => {});
+                                  void reload(page);
+                                }}
+                                disabled={busy}
+                                className="w-full text-left px-2.5 py-1.5 rounded-lg text-[11px] text-brand-300 hover:bg-ink-800"
+                              >✍️ Write draft (AI)</button>
+                            )}
                             {b.status !== "Published" && <button onClick={() => act(() => advanceBrief(b.id))} disabled={busy} className="w-full text-left px-2.5 py-1.5 rounded-lg text-[11px] text-slate-300 hover:bg-ink-800">Advance Status →</button>}
                             <button onClick={() => act(() => deleteBrief(b.id))} disabled={busy} className="w-full text-left px-2.5 py-1.5 rounded-lg text-[11px] text-rose-300 hover:bg-rose-500/10">Delete</button>
                           </div>
@@ -673,7 +685,7 @@ function TopicResearchTab() {
   const load = async () => { setLoading(true); try { setD(await getTopicResearch()); } finally { setLoading(false); } };
   useEffect(() => { load(); }, []);
   const flash = (m: string) => { setNote(m); setTimeout(() => setNote(""), 4000); };
-  const discover = async () => { setBusy(true); flash("🔎 Searching the web for trending topics… (~1 min)"); try { const r = await discoverTopics(); flash(r.created ? `✓ ${r.created} new topic(s) discovered: ${r.topics.slice(0, 2).join(", ")}` : "No new topics found right now."); await load(); } catch { flash("Couldn't discover — check the LLM key/quota."); } finally { setBusy(false); } };
+  const discover = async () => { setBusy(true); flash(q.trim() ? `🔎 Researching “${q.trim()}”… (~1 min)` : "🔎 Searching the web for trending topics… (~1 min)"); try { const r = await discoverTopics(q.trim()); flash(r.message || (r.created ? `✓ ${r.created} new topic(s) discovered: ${r.topics.slice(0, 2).join(", ")}` : "No new topics found right now.")); await load(); } catch { flash("Couldn't discover — check the LLM key/quota."); } finally { setBusy(false); } };
   const createBriefFor = async (id: string, theme: string) => { setBusy(true); try { await advanceBrief(id); flash(`✓ Brief started for "${theme.slice(0, 30)}".`); await load(); } finally { setBusy(false); } };
 
   if (loading || !d) return <div className="grid place-items-center py-32 text-slate-600"><Loader2 className="w-8 h-8 animate-spin" /></div>;

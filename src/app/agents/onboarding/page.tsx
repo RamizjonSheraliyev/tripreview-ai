@@ -12,7 +12,7 @@ import AgentGate from "@/components/AgentGate";
 import { FadeUp, Stagger, Item, motion } from "@/components/motion";
 import {
   fetchMe, getStoredUser, getOnboardingOverview, getOnboardingProviders, getClaimRequests, getVerificationCenter, getProfileCompletion, getServiceListings, setListingStatus, getSubscriptions, updateSubscriptionPlan, getApprovalQueue, queueAction, getMissingInformation, getOnboardingFunnel, getBadgeCenter, onbVerify, onbActivate, onbReject, onbRequestInfo, onbApproveClaim, onbRejectClaim, resolveMedia,
-  getGrowthJobs, startDiscoverySweep, startReviewHarvest, type GrowthJob,
+  getGrowthJobs, startDiscoverySweep, startReviewHarvest, stopGrowthJob, type GrowthJob,
   type OnboardingOverview, type OnbProvider, type ClaimRequestsData, type VerificationData, type CompletionData, type CompletionRow, type ServiceListingsData, type ServiceRow, type SubscriptionsData, type SubPackage, type ApprovalQueueData, type QueueRow, type MissingInfoData, type MissingRow, type FunnelData, type BadgeCenterData, type BadgeRow, type Kpi, type Seg,
 } from "@/lib/api";
 
@@ -100,13 +100,31 @@ export default function OnboardingPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready]);
 
+  // Founder-configurable runs: pick the category and how many, instead of the
+  // old fire-everything defaults; a running job can be stopped mid-way.
+  const [cfg, setCfg] = useState<"" | "sweep" | "harvest">("");
+  const [sweepCat, setSweepCat] = useState("");   // "" = all categories
+  const [sweepCount, setSweepCount] = useState(8);
+  const [harvCat, setHarvCat] = useState("");     // "" = all providers
+  const [harvTarget, setHarvTarget] = useState(300);
+
   const runSweep = async () => {
-    try { const r = await startDiscoverySweep(8); flash(r.message); setJobs(await getGrowthJobs().catch(() => null) || jobs); }
-    catch (e) { flash(e instanceof Error ? e.message : "Could not start the sweep."); }
+    setCfg("");
+    try {
+      const r = await startDiscoverySweep(Math.max(1, Math.min(20, sweepCount)), sweepCat ? [sweepCat] : []);
+      flash(r.message); setJobs(await getGrowthJobs().catch(() => null) || jobs);
+    } catch (e) { flash(e instanceof Error ? e.message : "Could not start the sweep."); }
   };
   const runHarvest = async () => {
-    try { const r = await startReviewHarvest(800, 120); flash(r.message); setJobs(await getGrowthJobs().catch(() => null) || jobs); }
-    catch (e) { flash(e instanceof Error ? e.message : "Could not start the harvest."); }
+    setCfg("");
+    try {
+      const r = await startReviewHarvest(Math.max(10, Math.min(2000, harvTarget)), 120, harvCat);
+      flash(r.message); setJobs(await getGrowthJobs().catch(() => null) || jobs);
+    } catch (e) { flash(e instanceof Error ? e.message : "Could not start the harvest."); }
+  };
+  const stopJob = async (kind: "discovery" | "harvest") => {
+    try { const r = await stopGrowthJob(kind); flash(r.message); setJobs(await getGrowthJobs().catch(() => null) || jobs); }
+    catch (e) { flash(e instanceof Error ? e.message : "Could not stop the job."); }
   };
 
   if (!ready) return <div className="min-h-screen grid place-items-center bg-ink-950 text-slate-500"><Loader2 className="w-7 h-7 animate-spin" /></div>;
@@ -122,12 +140,64 @@ export default function OnboardingPage() {
           <div className="min-w-0"><div className="flex items-center gap-2"><h1 className="text-base font-bold text-white leading-tight truncate">Provider Onboarding Agent</h1><span className="inline-flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300"><span className="relative flex h-1.5 w-1.5"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-70" /><span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-400" /></span> Active</span></div><p className="text-[11px] text-slate-500 truncate">Helps providers claim, verify, complete & manage their TripReview profiles</p></div>
           <div className="ml-auto flex items-center gap-2">
             {data && <span className="text-[10px] px-2 py-1 rounded-lg border border-ink-700 text-slate-400">{data.meta.totalProviders} providers</span>}
-            <button onClick={runSweep} disabled={jobs?.discovery.running} className="inline-flex items-center gap-1.5 px-3 h-9 rounded-lg bg-brand-600 text-white hover:bg-brand-500 disabled:opacity-50 text-sm font-bold">
-              {jobs?.discovery.running ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />} Find Providers
-            </button>
-            <button onClick={runHarvest} disabled={jobs?.harvest.running} className="inline-flex items-center gap-1.5 px-3 h-9 rounded-lg bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50 text-sm font-bold">
-              {jobs?.harvest.running ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Star className="w-3.5 h-3.5" />} Harvest Reviews
-            </button>
+            {jobs?.discovery.running ? (
+              <button onClick={() => stopJob("discovery")} disabled={jobs.discovery.stopRequested} className="inline-flex items-center gap-1.5 px-3 h-9 rounded-lg bg-rose-600 text-white hover:bg-rose-500 disabled:opacity-50 text-sm font-bold">
+                <XCircle className="w-3.5 h-3.5" /> {jobs.discovery.stopRequested ? "Stopping…" : "Stop Search"}
+              </button>
+            ) : (
+              <div className="relative">
+                <button onClick={() => setCfg(cfg === "sweep" ? "" : "sweep")} className="inline-flex items-center gap-1.5 px-3 h-9 rounded-lg bg-brand-600 text-white hover:bg-brand-500 text-sm font-bold">
+                  <Search className="w-3.5 h-3.5" /> Find Providers
+                </button>
+                {cfg === "sweep" && (
+                  <div className="absolute right-0 top-11 z-50 w-64 rounded-xl border border-ink-700 bg-ink-900 p-3 shadow-2xl space-y-2.5">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Category</label>
+                      <select value={sweepCat} onChange={(e) => setSweepCat(e.target.value)} className="w-full bg-ink-950 border border-ink-800 rounded-lg px-2 py-1.5 text-[12px] text-white focus:outline-none focus:border-brand-500/50">
+                        <option value="">All categories (full sweep)</option>
+                        {["Car Rental", "Yacht Rental", "Activities", "Airport Transfer", "Desert Safari", "Tour Operators", "Helicopter Tours", "Water Sports"].map((c) => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">How many companies{sweepCat ? "" : " (per category)"}</label>
+                      <input type="number" min={1} max={20} value={sweepCount} onChange={(e) => setSweepCount(Number(e.target.value) || 8)} className="w-full bg-ink-950 border border-ink-800 rounded-lg px-2 py-1.5 text-[12px] text-white focus:outline-none focus:border-brand-500/50" />
+                    </div>
+                    <button onClick={runSweep} className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-brand-600 text-white hover:bg-brand-500 text-[12px] font-bold">
+                      <Search className="w-3.5 h-3.5" /> Start search
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+            {jobs?.harvest.running ? (
+              <button onClick={() => stopJob("harvest")} disabled={jobs.harvest.stopRequested} className="inline-flex items-center gap-1.5 px-3 h-9 rounded-lg bg-rose-600 text-white hover:bg-rose-500 disabled:opacity-50 text-sm font-bold">
+                <XCircle className="w-3.5 h-3.5" /> {jobs.harvest.stopRequested ? "Stopping…" : "Stop Harvest"}
+              </button>
+            ) : (
+              <div className="relative">
+                <button onClick={() => setCfg(cfg === "harvest" ? "" : "harvest")} className="inline-flex items-center gap-1.5 px-3 h-9 rounded-lg bg-emerald-600 text-white hover:bg-emerald-500 text-sm font-bold">
+                  <Star className="w-3.5 h-3.5" /> Harvest Reviews
+                </button>
+                {cfg === "harvest" && (
+                  <div className="absolute right-0 top-11 z-50 w-64 rounded-xl border border-ink-700 bg-ink-900 p-3 shadow-2xl space-y-2.5">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Whose reviews</label>
+                      <select value={harvCat} onChange={(e) => setHarvCat(e.target.value)} className="w-full bg-ink-950 border border-ink-800 rounded-lg px-2 py-1.5 text-[12px] text-white focus:outline-none focus:border-emerald-500/50">
+                        <option value="">All companies</option>
+                        {["Car Rental", "Yacht Rental", "Airport Transfer", "Activities"].map((c) => <option key={c} value={c}>{c} companies</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">How many reviews (total)</label>
+                      <input type="number" min={10} max={2000} step={10} value={harvTarget} onChange={(e) => setHarvTarget(Number(e.target.value) || 300)} className="w-full bg-ink-950 border border-ink-800 rounded-lg px-2 py-1.5 text-[12px] text-white focus:outline-none focus:border-emerald-500/50" />
+                    </div>
+                    <button onClick={runHarvest} className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-500 text-[12px] font-bold">
+                      <Star className="w-3.5 h-3.5" /> Start harvest
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
             <button onClick={load} className="inline-flex items-center gap-1.5 px-3 h-9 rounded-lg border border-ink-700 text-slate-300 hover:text-white hover:border-ink-600 text-sm font-medium"><RefreshCw className="w-3.5 h-3.5" /> Refresh</button>
             <div className="w-8 h-8 rounded-full bg-ink-800 grid place-items-center text-[11px] font-bold text-slate-300">{(user?.name || "A").slice(0, 1)}</div>
           </div>

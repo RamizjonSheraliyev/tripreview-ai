@@ -572,7 +572,16 @@ function ClaimRequestsView({ flash, reload }: { flash: (m: string) => void; relo
               <table className="w-full text-[12px]">
                 <thead><tr className="text-slate-500 text-left border-b border-ink-800"><th className="font-medium py-2 px-2">Company / Contact</th><th className="font-medium px-2">Category</th><th className="font-medium px-2">Channel</th><th className="font-medium px-2">Submitted</th><th className="font-medium px-2">Status</th><th className="font-medium px-2">Score</th><th className="font-medium px-2">Assigned</th><th className="font-medium px-2"></th></tr></thead>
                 <tbody>
-                  {d.table.rows.length === 0 ? <tr><td colSpan={8} className="text-center text-slate-600 py-10">No claim requests match.</td></tr> :
+                  {d.table.rows.length === 0 ? (
+                    <tr><td colSpan={8} className="text-center py-10">
+                      <div className="text-slate-400 text-[13px] font-semibold">No claim requests yet</div>
+                      <div className="text-slate-600 text-[11px] mt-1 max-w-md mx-auto leading-relaxed">
+                        All discovered providers are unclaimed profiles — a request appears here the moment a company presses
+                        &ldquo;Claim this profile&rdquo; on the live site. The providers themselves are in the <b>Overview</b>,{" "}
+                        <b>Verification Center</b> and <b>Provider Activation</b> tabs.
+                      </div>
+                    </td></tr>
+                  ) :
                     d.table.rows.map((r) => { const CI = CH_ICON[r.channel] || CH_ICON.Email; const Ic = CI.icon; return (
                       <motion.tr key={r.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="border-b border-ink-800/60 hover:bg-ink-800/30">
                         <td className="py-2.5 px-2"><div className="flex items-center gap-2.5"><Logo url={r.logoUrl} name={r.company} /><div className="min-w-0"><div className="font-semibold text-white truncate flex items-center gap-1">{r.company}{r.ratingCount > 0 && <span className="inline-flex items-center gap-0.5 text-[10px] text-amber-300"><Star className="w-2.5 h-2.5 fill-amber-300" />{r.rating}</span>}</div><div className="text-[10px] text-slate-500 truncate">{r.contactEmail || r.location}</div></div></div></td>

@@ -546,7 +546,7 @@ export type ChatStep = { tool: string; summary: string; ok: boolean };
 export type ChatCard = {
   // "tool" = the agent proposed real work (writing, publishing, spending) and is
   // waiting on the founder's Approve before anything runs.
-  type: "blog" | "seo-fix" | "distribution" | "providers" | "tool";
+  type: "blog" | "seo-fix" | "distribution" | "providers" | "provider-candidate" | "claims" | "tool";
   title: string;
   subtitle?: string;
   body?: string;
@@ -836,6 +836,9 @@ export function updateTask(id: string, patch: TaskInput) { return request<{ ok: 
 export function deleteTask(id: string) { return request<{ ok: boolean }>(`/admin/tasks/${id}`, { method: "DELETE" }); }
 export function completeTask(id: string) { return request<{ ok: boolean; task: TaskFull }>(`/admin/tasks/${id}/complete`, { method: "POST" }); }
 export function generateTaskBrief(id: string) { return request<{ ok: boolean; message?: string; task: TaskFull }>(`/admin/tasks/${id}/brief`, { method: "POST" }); }
+// The assigned agent EXECUTES the task with its real tools; result lands in the
+// task comments + the Communication Center group chat.
+export function runTaskAI(id: string) { return request<{ ok: boolean; message?: string; agent?: string; result?: string; pendingApprovals?: number; task?: TaskFull }>(`/admin/tasks/${id}/run`, { method: "POST" }); }
 export function toggleChecklistItem(id: string, itemId: string) { return request<{ ok: boolean; task: TaskFull }>(`/admin/tasks/${id}/checklist/${itemId}/toggle`, { method: "POST" }); }
 export function addChecklistItem(id: string, label: string) { return request<{ ok: boolean; task: TaskFull }>(`/admin/tasks/${id}/checklist`, { method: "POST", body: JSON.stringify({ label }) }); }
 export function addTaskComment(id: string, text: string, author?: string) { return request<{ ok: boolean; task: TaskFull }>(`/admin/tasks/${id}/comment`, { method: "POST", body: JSON.stringify({ text, author }) }); }

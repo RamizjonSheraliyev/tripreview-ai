@@ -495,7 +495,7 @@ function GroupChat({ wf }: { wf: Workforce | null; group: boolean }) {
       </aside>
 
       {/* ===== CENTER: chat ===== */}
-      <section className="flex flex-col min-h-0">
+      <section className="flex flex-col min-h-0 min-w-0">
         <div className="h-14 px-4 border-b border-ink-800 flex items-center gap-3 shrink-0">
           <span className="w-9 h-9 rounded-lg bg-brand-600/15 text-brand-300 grid place-items-center shrink-0"><SelIcon className="w-4 h-4" /></span>
           <div className="min-w-0 flex-1"><div className="text-[13px] font-bold text-white truncate">{selName}</div><div className="text-[10px] text-slate-500 truncate">{selSub}</div></div>
@@ -518,7 +518,7 @@ function GroupChat({ wf }: { wf: Workforce | null; group: boolean }) {
           {msgs.map((m) => {
             const time = new Date(m.ts).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
             if (m.role === "founder") return (
-              <div key={m.id} className="flex flex-col items-end"><div className="max-w-[75%] rounded-2xl rounded-br-md bg-brand-600 text-white px-3.5 py-2.5 text-[13px] leading-relaxed whitespace-pre-wrap">{m.image && /* eslint-disable-next-line @next/next/no-img-element */ <img src={m.image} alt="attached" className="rounded-lg mb-2 max-h-40 w-auto" />}{m.text}</div><div className="text-[9px] text-slate-600 mt-0.5 mr-1">{time}</div></div>
+              <div key={m.id} className="flex flex-col items-end"><div className="max-w-[75%] rounded-2xl rounded-br-md bg-brand-600 text-white px-3.5 py-2.5 text-[13px] leading-relaxed whitespace-pre-wrap break-words">{m.image && /* eslint-disable-next-line @next/next/no-img-element */ <img src={m.image} alt="attached" className="rounded-lg mb-2 max-h-40 w-auto" />}{m.text}</div><div className="text-[9px] text-slate-600 mt-0.5 mr-1">{time}</div></div>
             );
             const Icon = iconFor(m.agentId || "ceo"); const rx = reacts[m.id] || {};
             return (
@@ -530,7 +530,7 @@ function GroupChat({ wf }: { wf: Workforce | null; group: boolean }) {
                   {m.card ? (
                     <TaskCard msg={m} busy={actBusy === m.sid} onAct={(d) => act(m, d)} />
                   ) : (
-                    <div className="rounded-2xl rounded-tl-md bg-ink-800 text-slate-200 px-3.5 py-2.5 text-[13px] leading-relaxed whitespace-pre-wrap">{m.text}</div>
+                    <div className="rounded-2xl rounded-tl-md bg-ink-800 text-slate-200 px-3.5 py-2.5 text-[13px] leading-relaxed whitespace-pre-wrap break-words">{m.text}</div>
                   )}
                   <div className="flex items-center gap-1 mt-1.5">
                     {REACTIONS.map((e) => (
@@ -644,6 +644,8 @@ function AgentConversations({ wf, tasks }: { wf: Workforce | null; tasks: OrchTa
   const react = (mid: number, e: string) => setReacts((r) => ({ ...r, [mid]: { ...(r[mid] || {}), [e]: (r[mid]?.[e] || 0) + 1 } }));
 
   const [voiceOut, setVoiceOut] = useState(false);
+  // "Create Task" prefill — overrides the topic opener seed until used.
+  const [seedOverride, setSeedOverride] = useState<{ text: string; key: string } | null>(null);
   const send = async (text: string, mention: string, img: ImgAtt | null) => {
     const t = text.trim();
     if ((!t && !img) || busy) return;
@@ -692,7 +694,7 @@ function AgentConversations({ wf, tasks }: { wf: Workforce | null; tasks: OrchTa
       </aside>
 
       {/* CENTER: discussion */}
-      <section className="flex flex-col min-h-0">
+      <section className="flex flex-col min-h-0 min-w-0">
         <div className="h-14 px-4 border-b border-ink-800 flex items-center gap-3 shrink-0">
           <span className="w-9 h-9 rounded-lg bg-brand-600/15 text-brand-300 grid place-items-center shrink-0"><Users className="w-4 h-4" /></span>
           <div className="min-w-0 flex-1"><div className="flex items-center gap-2"><div className="text-[13px] font-bold text-white truncate">{topic.title}</div><span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-violet-500/15 text-violet-300">Group</span></div><div className="text-[10px] text-slate-500 truncate">{topic.participants.length} agents in this conversation</div></div>
@@ -708,7 +710,7 @@ function AgentConversations({ wf, tasks }: { wf: Workforce | null; tasks: OrchTa
           {msgs.map((m) => {
             const time = new Date(m.ts).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
             if (m.role === "founder") return (
-              <div key={m.id} className="flex flex-col items-end"><div className="max-w-[75%] rounded-2xl rounded-br-md bg-brand-600 text-white px-3.5 py-2.5 text-[13px] leading-relaxed whitespace-pre-wrap">{m.image && /* eslint-disable-next-line @next/next/no-img-element */ <img src={m.image} alt="attached" className="rounded-lg mb-2 max-h-40 w-auto" />}{m.text}</div><div className="text-[9px] text-slate-600 mt-0.5 mr-1">{time}</div></div>
+              <div key={m.id} className="flex flex-col items-end"><div className="max-w-[75%] rounded-2xl rounded-br-md bg-brand-600 text-white px-3.5 py-2.5 text-[13px] leading-relaxed whitespace-pre-wrap break-words">{m.image && /* eslint-disable-next-line @next/next/no-img-element */ <img src={m.image} alt="attached" className="rounded-lg mb-2 max-h-40 w-auto" />}{m.text}</div><div className="text-[9px] text-slate-600 mt-0.5 mr-1">{time}</div></div>
             );
             const Icon = iconFor(m.agentId || "ceo"); const rx = reacts[m.id] || {};
             return (
@@ -716,7 +718,7 @@ function AgentConversations({ wf, tasks }: { wf: Workforce | null; tasks: OrchTa
                 <span className="w-8 h-8 rounded-lg bg-brand-600/15 text-brand-300 grid place-items-center shrink-0 mt-0.5"><Icon className="w-4 h-4" /></span>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 mb-0.5"><span className="text-[11px] font-bold text-white">{m.name}</span><span className="text-[9px] text-slate-600">{time}</span></div>
-                  <div className="rounded-2xl rounded-tl-md bg-ink-800 text-slate-200 px-3.5 py-2.5 text-[13px] leading-relaxed whitespace-pre-wrap">{m.text}</div>
+                  <div className="rounded-2xl rounded-tl-md bg-ink-800 text-slate-200 px-3.5 py-2.5 text-[13px] leading-relaxed whitespace-pre-wrap break-words">{m.text}</div>
                   <div className="flex items-center gap-1 mt-1.5">{REACTIONS.map((e) => <button key={e} onClick={() => react(m.id, e)} className={`inline-flex items-center gap-1 px-1.5 h-6 rounded-full text-[11px] border ${rx[e] ? "border-brand-500/40 bg-brand-500/10 text-brand-200" : "border-ink-800 text-slate-500 hover:border-ink-700"}`}>{e}{rx[e] ? <span className="text-[10px]">{rx[e]}</span> : null}</button>)}</div>
                 </div>
               </div>
@@ -726,7 +728,7 @@ function AgentConversations({ wf, tasks }: { wf: Workforce | null; tasks: OrchTa
           <div ref={endRef} />
         </div>
 
-        <ChatInput members={AGENTS} busy={busy} mentionId={to} setMentionId={setTo} statusOf={statusOf} seed={{ text: topic.opener, key: selId }} onSend={(text, img) => send(text, to, img)} placeholder={`Message ${topic.title}… (@ to mention, 📎 to attach an image)`} voiceOut={voiceOut} onToggleVoiceOut={() => setVoiceOut((v) => { if (v) stopSpeaking(); return !v; })} />
+        <ChatInput members={AGENTS} busy={busy} mentionId={to} setMentionId={setTo} statusOf={statusOf} seed={seedOverride || { text: topic.opener, key: selId }} onSend={(text, img) => send(text, to, img)} placeholder={`Message ${topic.title}… (@ to mention, 📎 to attach an image)`} voiceOut={voiceOut} onToggleVoiceOut={() => setVoiceOut((v) => { if (v) stopSpeaking(); return !v; })} />
       </section>
 
       {/* RIGHT: details + participants + related tasks */}
@@ -765,7 +767,7 @@ function AgentConversations({ wf, tasks }: { wf: Workforce | null; tasks: OrchTa
               ))}
               {relatedTasks.length === 0 && <li className="text-[11px] text-slate-500 text-center py-3">No related tasks.</li>}
             </ul>
-            <button className="mt-2 w-full inline-flex items-center justify-center gap-1.5 h-9 rounded-lg bg-gradient-to-r from-brand-500 to-violet-600 text-white text-[12px] font-bold"><Plus className="w-3.5 h-3.5" /> Create Task</button>
+            <button onClick={() => setSeedOverride({ text: "Create a task: ", key: "ct" + MID++ })} className="mt-2 w-full inline-flex items-center justify-center gap-1.5 h-9 rounded-lg bg-gradient-to-r from-brand-500 to-violet-600 text-white text-[12px] font-bold"><Plus className="w-3.5 h-3.5" /> Create Task</button>
           </div>
         </div>
       </aside>

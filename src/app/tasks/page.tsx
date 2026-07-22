@@ -11,7 +11,7 @@ import Sidebar from "@/components/Sidebar";
 import { FadeUp, Stagger, Item, motion } from "@/components/motion";
 import {
   fetchMe, getStoredUser, getTaskStats, listTasks, getTask, createTask, updateTask, deleteTask,
-  completeTask, toggleChecklistItem, addChecklistItem, addTaskComment, generateTaskBrief,
+  completeTask, toggleChecklistItem, addChecklistItem, addTaskComment, generateTaskBrief, runTaskAI,
   type TaskRow, type TaskFull, type TaskStats, type TaskInput,
 } from "@/lib/api";
 
@@ -302,6 +302,16 @@ function TaskDetail({ id, onBack, onOpen }: { id: string; onBack: () => void; on
 
   const act = async (fn: () => Promise<{ task: TaskFull }>) => { setBusy(true); try { setT((await fn()).task); } finally { setBusy(false); } };
   const genBrief = async () => { setBusy(true); try { const r = await generateTaskBrief(id); setT(r.task); } finally { setBusy(false); } };
+  const [runNote, setRunNote] = useState("");
+  const runAI = async () => {
+    setBusy(true); setRunNote("⏳ The agent is doing the task with its tools — this can take a minute…");
+    try {
+      const r = await runTaskAI(id);
+      if (r.task) setT(r.task);
+      setRunNote(r.ok ? `✓ ${r.agent} ran it${r.pendingApprovals ? ` — ${r.pendingApprovals} approval card(s) waiting in the Communication Center` : ""}. Result is in Comments.` : (r.message || "The agent couldn't run it."));
+    } catch { setRunNote("The agent couldn't run it — check the backend/LLM key."); }
+    finally { setBusy(false); setTimeout(() => setRunNote(""), 9000); }
+  };
   const toggle = (itemId: string) => act(() => toggleChecklistItem(id, itemId));
   const complete = () => act(() => completeTask(id));
   const addItem = async () => { if (!newItem.trim()) return; await act(() => addChecklistItem(id, newItem.trim())); setNewItem(""); };
@@ -311,10 +321,12 @@ function TaskDetail({ id, onBack, onOpen }: { id: string; onBack: () => void; on
 
   return (
     <FadeUp className="space-y-4">
+      {runNote && <div className="fixed top-4 right-4 z-[80] rounded-xl border border-brand-500/40 bg-ink-900 px-4 py-2.5 text-[12px] text-brand-100 shadow-2xl max-w-md">{runNote}</div>}
       {/* breadcrumb + actions */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <button onClick={onBack} className="inline-flex items-center gap-1.5 text-[12px] text-slate-400 hover:text-white"><ArrowLeft className="w-4 h-4" /> Back to Tasks</button>
         <div className="flex items-center gap-2">
+          <button disabled={busy || t.status === "Completed"} onClick={runAI} title="The assigned agent executes this task with its real tools and reports back" className="inline-flex items-center gap-1.5 px-3 h-9 rounded-lg bg-brand-600 text-white text-[12px] font-bold hover:bg-brand-500 disabled:opacity-50">{busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />} Run with AI</button>
           <button disabled={busy} onClick={genBrief} title="AI: fill objective, deliverables, acceptance criteria & checklist" className="inline-flex items-center gap-1.5 px-3 h-9 rounded-lg border border-violet-500/30 text-violet-300 text-[12px] font-semibold hover:bg-violet-500/10 disabled:opacity-50">{busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />} Generate Brief</button>
           <button disabled={busy || t.status === "Completed"} onClick={complete} className="inline-flex items-center gap-1.5 px-3 h-9 rounded-lg border border-emerald-500/30 text-emerald-300 text-[12px] font-semibold hover:bg-emerald-500/10 disabled:opacity-50"><CheckCircle2 className="w-4 h-4" /> {t.status === "Completed" ? "Completed" : "Mark Complete"}</button>
           <button onClick={() => setEditOpen(true)} className="inline-flex items-center gap-1.5 px-3 h-9 rounded-lg border border-ink-700 text-slate-300 text-[12px] font-semibold hover:bg-ink-800"><PenLine className="w-4 h-4" /> Edit Task</button>

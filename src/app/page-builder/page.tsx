@@ -274,7 +274,11 @@ export default function PageBuilderPage() {
       await loadList();
       setPage(r.page); setReviews(null); setChanges([]); setManual([]);
       setTab("Live Template");
-      note(r.ai ? `✓ “${r.page.heroTitle}” written by the SEO Agent — saved as a draft.` : `✓ Page created from the house template — add an LLM key for agent-written copy.`);
+      note(r.existing
+        ? `⚠️ ${r.message || `A page for this subject already exists (“${r.page.heroTitle}”) — opened it instead of creating a duplicate. Use a different keyword for a new page.`}`
+        : r.ai
+          ? `✓ “${r.page.heroTitle}” written by the SEO Agent — saved as a draft.`
+          : `✓ Page created from the house template — add an LLM key for agent-written copy.`);
     } catch (e) { note(e instanceof Error ? e.message : "Could not build the page."); }
     finally { setBuilding(false); }
   };

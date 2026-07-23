@@ -651,7 +651,9 @@ export type LandingPageFull = GeneratedPage & {
   metaTitle: string; metaDescription: string; publishedAt?: string;
 };
 export function generateLandingPage(keyword: string, category = "auto") {
-  return request<{ ok: boolean; page: LandingPageFull; ai: boolean }>("/admin/agents/ceo/pages/generate", { method: "POST", body: JSON.stringify({ keyword, category }) });
+  // existing:true = the duplicate guard found a page already covering this
+  // subject and returned it instead of minting a "-2" copy.
+  return request<{ ok: boolean; page: LandingPageFull; ai: boolean; existing?: boolean; message?: string }>("/admin/agents/ceo/pages/generate", { method: "POST", body: JSON.stringify({ keyword, category }) });
 }
 
 // ---- Landing page: the real template + the agent review team ----
